@@ -95,3 +95,13 @@ ggplot(DB, aes(x = Time, y = AQ_nox)) +
   labs(title = "AQ_nox over time by Province") +
   theme_minimal() +
   theme(legend.position = "bottom")
+
+# Create a scatter plot with a linear regression line
+ggplot(DB, aes(x = Time, y = AQ_nox)) +
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "AQ_nox over time") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+
