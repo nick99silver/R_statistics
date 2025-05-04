@@ -92,7 +92,7 @@ ggplot(DB, aes(x  = AQ_nox, color=Province)) +
 #create_report(DB,
 #              y = "Province",
 #              config = configure_report(add_plot_prcomp = FALSE),
-#              output_file = "EDA_Prov_Report.html")
+              output_file = "EDA_Prov_Report.html")
 
 ggplot(DB, aes(x = Time, y = AQ_nox)) +
   geom_point() + 
@@ -131,3 +131,6 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
        y = "NOₓ Concentration (µg/m³)") +
   theme_minimal() +
   scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+
+
+
