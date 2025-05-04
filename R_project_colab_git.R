@@ -37,6 +37,10 @@ Agrimonia_Dataset$Month <- month(Agrimonia_Dataset$Time, label = TRUE)
 Agrimonia_Dataset <- Agrimonia_Dataset %>% select(IDStations:Time, Month, everything())
 mesi_italiani <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+#mesi_italiani <- c("gen", "feb", "mar", "apr", "mag", "giu",
+#"lug", "ago", "set", "ott", "nov", "dic")
+
 Agrimonia_Dataset <- Agrimonia_Dataset %>%
   mutate(
     Month_num = match(Month, mesi_italiani),  
@@ -104,6 +108,6 @@ ggplot(DB, aes(x = Time, y = AQ_nox)) +
   theme_minimal() +
   theme(legend.position = "bottom")
 
-#test
+
 
 
