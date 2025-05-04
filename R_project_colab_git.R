@@ -33,7 +33,7 @@ Agrimonia_Dataset <- Agrimonia_Dataset %>%
             by = c("IDStations" = "IDStation")) %>%
   select(IDStations, NameStation, Province, everything())
 
-Agrimonia_Dataset$Month <- month(Agrimonia_Dataset$Time, label = TRUE)
+Agrimonia_Dataset$Month <- lubridate::month(Agrimonia_Dataset$Time, label = TRUE)
 Agrimonia_Dataset <- Agrimonia_Dataset %>% select(IDStations:Time, Month, everything())
 mesi_italiani <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -51,6 +51,8 @@ Agrimonia_Dataset <- Agrimonia_Dataset %>%
       Month_num %in% c(9, 10, 11)   ~ "Autumn",
     ))
 
+# Create a column indicating day of the week
+Agrimonia_Dataset$Day_of_week <- weekdays(Agrimonia_Dataset$Time)
 
 # Create a vector with station IDs selected
 stations_id   <- c(504, 583, 697)
@@ -87,10 +89,10 @@ ggplot(DB, aes(x  = AQ_nox, color=Province)) +
   geom_density(size=1.5)+ theme_minimal() +
   theme(legend.position = "bottom")
 # Create full HTML report
-create_report(DB,
-              y = "Province",
-              config = configure_report(add_plot_prcomp = FALSE),
-              output_file = "EDA_Prov_Report.html")
+#create_report(DB,
+#              y = "Province",
+#              config = configure_report(add_plot_prcomp = FALSE),
+#              output_file = "EDA_Prov_Report.html")
 
 ggplot(DB, aes(x = Time, y = AQ_nox)) +
   geom_point() + 
@@ -110,4 +112,22 @@ ggplot(DB, aes(x = Time, y = AQ_nox)) +
 
 
 
+# Create a plot showing the average AQ_nox by day of the week
+ggplot(DB, aes(x = Day_of_week, y = AQ_nox)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "red", linewidth = 1.2) +
+  stat_summary(fun = mean, geom = "point", color = "red", size = 2) +
+  labs(title = "AQ_nox by Day of the Week (Mean Highlighted)",
+       y = "NOₓ Concentration (µg/m³)") +
+  theme_minimal() +
+  scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
+# Create a plot showing the average AQ_nox by day of the week In Milano
+ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "red", linewidth = 1.2) +
+  stat_summary(fun = mean, geom = "point", color = "red", size = 2) +
+  labs(title = "AQ_nox by Day of the Week (Mean Highlighted)",
+       y = "NOₓ Concentration (µg/m³)") +
+  theme_minimal() +
+  scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
