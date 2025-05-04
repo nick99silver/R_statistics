@@ -92,8 +92,9 @@ ggplot(DB, aes(x  = AQ_nox, color=Province)) +
 #create_report(DB,
 #              y = "Province",
 #              config = configure_report(add_plot_prcomp = FALSE),
-              output_file = "EDA_Prov_Report.html")
+#              output_file = "EDA_Prov_Report.html")
 
+#From here new changes applied by nick99silver to be approved from group
 ggplot(DB, aes(x = Time, y = AQ_nox)) +
   geom_point() + 
   geom_smooth(method = "lm", se = FALSE) +
