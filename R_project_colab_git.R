@@ -134,5 +134,3 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
   scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
 
-#Test
-
