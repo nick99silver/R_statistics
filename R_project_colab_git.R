@@ -234,3 +234,74 @@ cat("\nResiduals Summary Statistics:\n")
 summary(residuals)
 cat("\nStandard Deviation of Residuals:", sd(residuals), "\n")
 
+# Load required package for ARMA modeling
+#install.packages("forecast")
+library(forecast)
+
+# Convert residuals to time series object
+residuals_ts <- ts(residuals, frequency = 24)  # Assuming hourly data
+
+# Find best ARMA model using auto.arima
+best_arma <- auto.arima(residuals_ts, 
+                       seasonal = TRUE,
+                       stepwise = FALSE,
+                       approximation = FALSE,
+                       trace = TRUE)
+
+# Print the best model summary
+print(summary(best_arma))
+
+# Get the residuals from the ARMA model
+arma_residuals <- residuals(best_arma)
+
+# Plot the original residuals vs ARMA model residuals
+par(mfrow = c(2, 2))
+plot(residuals_ts, main = "Original Residuals")
+plot(arma_residuals, main = "ARMA Model Residuals")
+acf(residuals_ts, main = "ACF of Original Residuals")
+acf(arma_residuals, main = "ACF of ARMA Residuals")
+
+# Test for autocorrelation in ARMA residuals
+Box.test(arma_residuals, type = "Ljung-Box")
+
+# Shapiro test for normality of ARMA residuals
+shapiro.test(arma_residuals)
+
+# Create a new model that combines the original regression with ARMA
+# First, get the fitted values from the original model
+fitted_values <- fitted(nox_model)
+
+# Create a new time series with the original data
+y_ts <- ts(train_data$AQ_nox, frequency = 24)
+
+# Fit ARIMA model to the original data
+best_arima <- auto.arima(y_ts, 
+                        xreg = model.matrix(nox_model)[,-1],  # Remove intercept
+                        seasonal = TRUE,
+                        stepwise = FALSE,
+                        approximation = FALSE)
+
+# Print the combined model summary
+print(summary(best_arima))
+
+# Make predictions with the new model
+new_xreg <- model.matrix(nox_model, data = test_data)[,-1]  # Remove intercept
+arima_forecast <- forecast(best_arima, xreg = new_xreg, h = nrow(test_data))
+
+# Calculate new RMSE
+new_rmse <- sqrt(mean((test_data$AQ_nox - arima_forecast$mean)^2, na.rm = TRUE))
+cat("\nNew RMSE with ARIMA model:", new_rmse, "\n")
+
+# Compare original and new residuals
+par(mfrow = c(2, 2))
+plot(residuals, main = "Original Model Residuals")
+plot(arima_forecast$residuals, main = "ARIMA Model Residuals")
+acf(residuals, main = "ACF of Original Residuals")
+acf(arima_forecast$residuals, main = "ACF of ARIMA Residuals")
+
+# Test for autocorrelation in new residuals
+Box.test(arima_forecast$residuals, type = "Ljung-Box")
+
+# Shapiro test for new residuals
+shapiro.test(arima_forecast$residuals)
+
