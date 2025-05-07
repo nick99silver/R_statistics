@@ -133,6 +133,13 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
   theme_minimal() +
   scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
+library(zoo)
+
+# Interpola direttamente nella colonna AQ_nox
+DB$AQ_nox <- na.approx(DB$AQ_nox)
+
+sum(is.na(DB$AQ_nox))  
+
 # Split data into training and test sets
 set.seed(123)
 train_index <- sample(1:nrow(DB), 0.8 * nrow(DB))
@@ -140,7 +147,7 @@ train_data <- DB[train_index, ]
 test_data <- DB[-train_index, ]
 
 # Build multiple linear regression model
-nox_model <- lm(AQ_nox ~ Time + Temperature + Humidity + Day_of_week + Province, data = train_data)
+nox_model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
 
 # Print model summary
 summary(nox_model)
@@ -148,8 +155,10 @@ summary(nox_model)
 # Make predictions on test set
 predictions <- predict(nox_model, newdata = test_data)
 
+sum(is.na(predictions))  # Controlla se ci sono valori NA nelle previsioni
+
 # Calculate RMSE
-rmse <- sqrt(mean((test_data$AQ_nox - predictions)^2))
+rmse <- sqrt(mean((test_data$AQ_nox - predictions)^2, na.rm = TRUE))
 cat("Root Mean Square Error:", rmse, "\n")
 
 # Plot actual vs predicted values
@@ -164,6 +173,11 @@ ggplot(data.frame(actual = test_data$AQ_nox, predicted = predictions),
 
 # Calculate residuals
 residuals <- test_data$AQ_nox - predictions
+
+# Control for NA values in residuals
+sum(is.na(residuals))
+
+
 
 # Create a data frame with residuals and actual values
 residual_df <- data.frame(
