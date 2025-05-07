@@ -133,4 +133,90 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
   theme_minimal() +
   scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
+# Split data into training and test sets
+set.seed(123)
+train_index <- sample(1:nrow(DB), 0.8 * nrow(DB))
+train_data <- DB[train_index, ]
+test_data <- DB[-train_index, ]
+
+# Build multiple linear regression model
+nox_model <- lm(AQ_nox ~ Time + Temperature + Humidity + Day_of_week + Province, data = train_data)
+
+# Print model summary
+summary(nox_model)
+
+# Make predictions on test set
+predictions <- predict(nox_model, newdata = test_data)
+
+# Calculate RMSE
+rmse <- sqrt(mean((test_data$AQ_nox - predictions)^2))
+cat("Root Mean Square Error:", rmse, "\n")
+
+# Plot actual vs predicted values
+ggplot(data.frame(actual = test_data$AQ_nox, predicted = predictions), 
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Predicted NOx Values",
+       x = "Actual NOx",
+       y = "Predicted NOx") +
+  theme_minimal()
+
+# Calculate residuals
+residuals <- test_data$AQ_nox - predictions
+
+# Create a data frame with residuals and actual values
+residual_df <- data.frame(
+  actual = test_data$AQ_nox,
+  predicted = predictions,
+  residuals = residuals,
+  time = test_data$Time
+)
+
+# Plot residuals vs predicted values
+ggplot(residual_df, aes(x = predicted, y = residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(title = "Residuals vs Predicted Values",
+       x = "Predicted Values",
+       y = "Residuals") +
+  theme_minimal()
+
+# Plot residuals vs time
+ggplot(residual_df, aes(x = time, y = residuals)) +
+  geom_point(alpha = 0.5) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  geom_smooth(method = "loess", se = TRUE) +
+  labs(title = "Residuals vs Time",
+       x = "Time",
+       y = "Residuals") +
+  theme_minimal()
+
+# Plot residuals histogram with normal curve
+ggplot(residual_df, aes(x = residuals)) +
+  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = "black") +
+  stat_function(fun = dnorm, args = list(mean = mean(residual_df$residuals), 
+                                       sd = sd(residual_df$residuals)),
+                color = "red", size = 1) +
+  labs(title = "Distribution of Residuals",
+       x = "Residuals",
+       y = "Density") +
+  theme_minimal()
+
+# Calculate and plot autocorrelation of residuals
+acf_residuals <- acf(residuals, plot = FALSE)
+plot(acf_residuals, main = "Autocorrelation of Residuals")
+
+# Durbin-Watson test for autocorrelation
+library(lmtest)
+dwtest(nox_model)
+
+# Shapiro-Wilk test for normality of residuals
+shapiro.test(residuals)
+
+# Print summary statistics of residuals
+cat("\nResiduals Summary Statistics:\n")
+summary(residuals)
+cat("\nStandard Deviation of Residuals:", sd(residuals), "\n")
 
