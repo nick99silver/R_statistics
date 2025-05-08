@@ -96,8 +96,8 @@ ggplot(DB, aes(x  = AQ_nox, color=Province)) +
 
 #From here new changes applied by nick99silver to be approved from group
 ggplot(DB, aes(x = Time, y = AQ_nox)) +
-  geom_point() + 
-  geom_smooth(method = "lm", se = FALSE) +
+  geom_point(aes(color = Season)) +  # colore solo per i punti
+  geom_smooth(method = "lm", se = FALSE, color = "black") +  # una sola linea per Province
   facet_wrap(~ Province) +
   labs(title = "AQ_nox over time by Province") +
   theme_minimal() +
@@ -105,8 +105,8 @@ ggplot(DB, aes(x = Time, y = AQ_nox)) +
 
 # Create a scatter plot with a linear regression line
 ggplot(DB, aes(x = Time, y = AQ_nox)) +
-  geom_point() + 
-  geom_smooth(method = "lm", se = FALSE) +
+  geom_point(aes(color=Season)) + 
+  geom_smooth(method = "lm", se = FALSE, color="black") +
   labs(title = "AQ_nox over time") +
   theme_minimal() +
   theme(legend.position = "bottom")
@@ -128,7 +128,7 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
   geom_boxplot(outlier.alpha = 0.2) +
   stat_summary(fun = mean, geom = "line", aes(group = 1), color = "red", linewidth = 1.2) +
   stat_summary(fun = mean, geom = "point", color = "red", size = 2) +
-  labs(title = "AQ_nox by Day of the Week (Mean Highlighted)",
+  labs(title = "AQ_nox by Day of the Week in Milano (Mean Highlighted)",
        y = "NOₓ Concentration (µg/m³)") +
   theme_minimal() +
   scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
@@ -136,6 +136,7 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
 library(zoo)
 
 # Interpola direttamente nella colonna AQ_nox
+# Rivedere interpolazione
 DB$AQ_nox <- na.approx(DB$AQ_nox)
 
 sum(is.na(DB$AQ_nox))  
@@ -278,8 +279,8 @@ y_ts <- ts(train_data$AQ_nox, frequency = 24)
 best_arima <- auto.arima(y_ts, 
                         xreg = model.matrix(nox_model)[,-1],  # Remove intercept
                         seasonal = TRUE,
-                        stepwise = FALSE,
-                        approximation = FALSE)
+                        stepwise = TRUE,
+                        approximation = TRUE)
 
 # Print the combined model summary
 print(summary(best_arima))
