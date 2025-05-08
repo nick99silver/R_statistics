@@ -177,9 +177,9 @@ evaluate_split <- function(train_ratio, data) {
     test_data <- data[test_indices, ]
     
     # Fit model
-    model <- lm(AQ_nox ~ Time + Temperature + Humidity + Day_of_week + Province, 
-                data = train_data)
+    model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
     
+  
     # Make predictions
     predictions <- predict(model, newdata = test_data)
     
@@ -335,7 +335,7 @@ cat("\nStandard Deviation of Residuals:", sd(residuals), "\n")
 library(forecast)
 
 # Convert residuals to time series object
-residuals_ts <- ts(residuals, frequency = 24)  # Assuming hourly data
+residuals_ts <- ts(residuals, frequency = 24)  # Assuming daily data
 
 # Find best ARMA model using auto.arima
 best_arma <- auto.arima(residuals_ts, 
