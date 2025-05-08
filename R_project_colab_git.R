@@ -136,16 +136,111 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
 library(zoo)
 
 # Interpola direttamente nella colonna AQ_nox
-# Rivedere interpolazione
+# Rivedere interpolazione chiedendo a Otto, possible uso ARIMA per stimare i valori mancanti
 DB$AQ_nox <- na.approx(DB$AQ_nox)
 
-sum(is.na(DB$AQ_nox))  
+sum(is.na(DB$AQ_nox))
 
-# Split data into training and test sets
+# Define different split ratios to test
+split_ratios <- seq(0.6, 0.9, by = 0.05)  # Testing splits from 60% to 90% training data
+
+# Initialize storage for results
+split_results <- data.frame(
+  train_ratio = numeric(),
+  rmse = numeric(),
+  rmse_sd = numeric()  # Standard deviation of RMSE across folds
+)
+
+# Number of cross-validation folds
+n_folds <- 5
+
+# Function to evaluate split ratio
+evaluate_split <- function(train_ratio, data) {
+  # Initialize vector to store RMSE values for each fold
+  fold_rmses <- numeric(n_folds)
+  
+  # Create folds
+  set.seed(123)  # For reproducibility
+  folds <- cut(seq(1, nrow(data)), breaks = n_folds, labels = FALSE)
+  
+  for(fold in 1:n_folds) {
+    # Create train and test indices for this fold
+    test_indices <- which(folds == fold)
+    train_indices <- which(folds != fold)
+    
+    # Further split the training data according to the ratio
+    n_train <- floor(length(train_indices) * train_ratio)
+    train_indices <- sample(train_indices, n_train)
+    
+    # Split the data
+    train_data <- data[train_indices, ]
+    test_data <- data[test_indices, ]
+    
+    # Fit model
+    model <- lm(AQ_nox ~ Time + Temperature + Humidity + Day_of_week + Province, 
+                data = train_data)
+    
+    # Make predictions
+    predictions <- predict(model, newdata = test_data)
+    
+    # Calculate RMSE for this fold
+    fold_rmses[fold] <- sqrt(mean((test_data$AQ_nox - predictions)^2, na.rm = TRUE))
+  }
+  
+  # Return mean and standard deviation of RMSE
+  return(list(
+    mean_rmse = mean(fold_rmses),
+    sd_rmse = sd(fold_rmses)
+  ))
+}
+
+# Perform grid search
+cat("Starting split ratio grid search...\n")
+for(ratio in split_ratios) {
+  cat(sprintf("Testing train ratio: %.2f\n", ratio))
+  results <- evaluate_split(ratio, DB)
+  
+  split_results <- rbind(split_results, data.frame(
+    train_ratio = ratio,
+    rmse = results$mean_rmse,
+    rmse_sd = results$sd_rmse
+  ))
+}
+
+# Find best split ratio (minimum RMSE)
+best_ratio_idx <- which.min(split_results$rmse)
+best_ratio <- split_results$train_ratio[best_ratio_idx]
+
+cat("\nResults of split ratio grid search:\n")
+print(split_results)
+
+cat("\nBest train ratio:", best_ratio, "\n")
+cat("Best RMSE:", split_results$rmse[best_ratio_idx], "\n")
+cat("RMSE standard deviation:", split_results$rmse_sd[best_ratio_idx], "\n")
+
+# Plot results
+ggplot(split_results, aes(x = train_ratio)) +
+  geom_line(aes(y = rmse, color = "Mean RMSE")) +
+  geom_ribbon(aes(ymin = rmse - rmse_sd, ymax = rmse + rmse_sd, fill = "RMSE SD"), alpha = 0.2) +
+  geom_point(aes(y = rmse, color = "Mean RMSE")) +
+  labs(title = "Model Performance vs Train/Test Split Ratio",
+       x = "Training Data Ratio",
+       y = "RMSE",
+       color = "Metric",
+       fill = "Metric") +
+  scale_color_manual(values = c("Mean RMSE" = "blue")) +
+  scale_fill_manual(values = c("RMSE SD" = "blue")) +
+  theme_minimal()
+
+# Use the best ratio for the final split
 set.seed(123)
-train_index <- sample(1:nrow(DB), 0.8 * nrow(DB))
+train_index <- sample(1:nrow(DB), floor(nrow(DB) * best_ratio))
 train_data <- DB[train_index, ]
 test_data <- DB[-train_index, ]
+
+cat("\nFinal split sizes:\n")
+cat("Training set size:", nrow(train_data), "\n")
+cat("Test set size:", nrow(test_data), "\n")
 
 # Build multiple linear regression model
 nox_model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
