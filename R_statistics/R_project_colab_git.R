@@ -141,7 +141,7 @@ DB$AQ_nox <- na.approx(DB$AQ_nox)
 
 sum(is.na(DB$AQ_nox))
 
-# --- STEP 1: Grid search for the best split ratio ---
+# Define different split ratios to test
 split_ratios <- seq(0.6, 0.9, by = 0.05)  # Testing splits from 60% to 90% training data
 
 # Initialize storage for results
@@ -155,16 +155,14 @@ split_results <- data.frame(
 n_folds <- 5
 
 # Function to evaluate split ratio
-evaluate_split <- function(train_ratio, DB, n_folds) {
+evaluate_split <- function(train_ratio, DB) {
   # Initialize vector to store RMSE values for each fold
   fold_rmses <- numeric(n_folds)
   
- 
   # Create folds
   set.seed(123)  # For reproducibility
-  folds <- cut(sample(1:nrow(DB)), breaks = n_folds, labels = FALSE)
-
-
+  folds <- cut(seq(1, nrow(DB)), breaks = n_folds, labels = FALSE)
+  
   for(fold in 1:n_folds) {
     # Create train and test indices for this fold
     test_indices <- which(folds == fold)
@@ -175,8 +173,8 @@ evaluate_split <- function(train_ratio, DB, n_folds) {
     train_indices <- sample(train_indices, n_train)
     
     # Split the data
-    train_data <- DB[train_indices, ]
-    test_data <- DB[test_indices, ]
+    train_data <- data[train_indices, ]
+    test_data <- data[test_indices, ]
     
     # Fit model
     model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
@@ -200,7 +198,7 @@ evaluate_split <- function(train_ratio, DB, n_folds) {
 cat("Starting split ratio grid search...\n")
 for(ratio in split_ratios) {
   cat(sprintf("Testing train ratio: %.2f\n", ratio))
-  results <- evaluate_split(ratio, DB, n_folds)
+  results <- evaluate_split(ratio, DB)
   
   split_results <- rbind(split_results, data.frame(
     train_ratio = ratio,
@@ -244,80 +242,30 @@ cat("\nFinal split sizes:\n")
 cat("Training set size:", nrow(train_data), "\n")
 cat("Test set size:", nrow(test_data), "\n")
 
-# --- STEP 2: LASSO Variable Selection ---
-tryCatch({
-  # Prepare data for LASSO
-  # Create model matrix for training data
-  x_train <- model.matrix(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)[,-1]  # Remove intercept
-  y_train <- train_data$AQ_nox
+# Build multiple linear regression model
+nox_model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
 
-  # Create model matrix for test data
-  x_test <- model.matrix(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = test_data)[,-1]  # Remove intercept
-  y_test <- test_data$AQ_nox
+# Print model summary
+summary(nox_model)
 
-  # Perform cross-validation to find optimal lambda
-  set.seed(123)
-  cv_lasso <- cv.glmnet(x_train, y_train, alpha = 1, nfolds = 5)
+# Make predictions on test set
+predictions <- predict(nox_model, newdata = test_data)
 
-  # Plot cross-validation results
-  plot(cv_lasso)
-  cat("\nCross-validation plot created\n")
+sum(is.na(predictions))  # Controlla se ci sono valori NA nelle previsioni
 
-  # Get the optimal lambda
-  best_lambda <- cv_lasso$lambda.min
-  cat("\nOptimal lambda:", best_lambda, "\n")
+# Calculate RMSE
+rmse <- sqrt(mean((test_data$AQ_nox - predictions)^2, na.rm = TRUE))
+cat("Root Mean Square Error:", rmse, "\n")
 
-  # Fit LASSO model with optimal lambda
-  lasso_model <- glmnet(x_train, y_train, alpha = 1, lambda = best_lambda)
-
-  # Get coefficients
-  coef_matrix <- coef(lasso_model)
-  cat("\nLASSO Coefficients:\n")
-  print(coef_matrix)
-
-  # Identify selected variables (non-zero coefficients)
-  selected_vars <- rownames(coef_matrix)[coef_matrix != 0]
-  cat("\nSelected variables:", paste(selected_vars, collapse = ", "), "\n")
-
-  # Build final model using selected variables
-  formula_str <- paste("AQ_nox ~", paste(selected_vars[-1], collapse = " + "))  # Remove intercept
-  nox_model <- lm(as.formula(formula_str), data = train_data)
-
-  # Print model summary
-  summary(nox_model)
-
-  # Make predictions on test set
-  predictions <- predict(nox_model, newdata = test_data)
-
-  # Check for NA values in predictions
-  na_count <- sum(is.na(predictions))
-  cat("\nNumber of NA values in predictions:", na_count, "\n")
-
-  # Calculate RMSE
-  rmse <- sqrt(mean((test_data$AQ_nox - predictions)^2, na.rm = TRUE))
-  cat("Root Mean Square Error:", rmse, "\n")
-
-  # Plot actual vs predicted values
-  ggplot(data.frame(actual = test_data$AQ_nox, predicted = predictions), 
-         aes(x = actual, y = predicted)) +
-    geom_point(alpha = 0.5) +
-    geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
-    labs(title = "Actual vs Predicted NOx Values (LASSO Selected Variables)",
-         x = "Actual NOx",
-         y = "Predicted NOx") +
-    theme_minimal()
-
-}, error = function(e) {
-  cat("\nError occurred during LASSO implementation:\n")
-  print(e)
-  cat("\nFalling back to standard linear model...\n")
-  
-  # Fallback to standard linear model
-  nox_model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
-  predictions <- predict(nox_model, newdata = test_data)
-  rmse <- sqrt(mean((test_data$AQ_nox - predictions)^2, na.rm = TRUE))
-  cat("Root Mean Square Error (standard model):", rmse, "\n")
-})
+# Plot actual vs predicted values
+ggplot(data.frame(actual = test_data$AQ_nox, predicted = predictions), 
+       aes(x = actual, y = predicted)) +
+  geom_point(alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
+  labs(title = "Actual vs Predicted NOx Values",
+       x = "Actual NOx",
+       y = "Predicted NOx") +
+  theme_minimal()
 
 # Calculate residuals
 residuals <- test_data$AQ_nox - predictions
@@ -452,4 +400,3 @@ Box.test(arima_forecast$residuals, type = "Ljung-Box")
 
 # Shapiro test for new residuals
 shapiro.test(arima_forecast$residuals)
-

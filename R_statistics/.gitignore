@@ -1,0 +1,24 @@
+# History files
+.Rhistory
+.Rapp.history
+
+# Session data
+.RData
+.Ruserdata
+
+# RStudio files
+.Rproj.user/
+.Rproj.user
+
+# Environment files
+.Renviron
+
+# Output and cache
+*.utf8.md
+*.knit.md
+*.Rcheck/
+*.pdf
+
+# OS files
+.DS_Store
+Thumbs.db
