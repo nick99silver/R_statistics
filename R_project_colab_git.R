@@ -10,6 +10,8 @@ library(glmnet) # LASSO
 library(moments) # jarque.test
 library(caret) # external validation
 library(DataExplorer)
+library(zoo)
+library(imputeTS)
 
 print("Libraries loaded")
 
@@ -60,6 +62,11 @@ stations_id   <- c(504, 583, 697)
 
 DB <- Agrimonia_Dataset %>% 
   filter(IDStations %in% stations_id)
+
+# transforming Stations_name into categorical data
+DB$NameStation <- as.factor(DB$NameStation)
+
+
 MI_DB <- DB %>% 
   filter(IDStations==504)
 BG_DB <- DB %>% 
@@ -133,15 +140,9 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
   theme_minimal() +
   scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
-library(zoo)
-
 # Interpola direttamente nella colonna AQ_nox
 # Rivedere interpolazione chiedendo a Otto, possible uso ARIMA per stimare i valori mancanti
 #DB$AQ_nox <- na.approx(DB$AQ_nox)
-
-#installing library inputeTS
-library(imputeTS)
-
 
 ts_data <- ts(DB$AQ_nox, frequency = 24)
 
@@ -200,7 +201,7 @@ evaluate_split <- function(train_ratio, data) {
     train_data <- data[train_indices, ]
     test_data <- data[test_indices, ]
     
-    # Fit model
+    # Fit model with 
     model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
     
   
