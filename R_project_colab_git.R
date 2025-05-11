@@ -160,276 +160,129 @@ ggplot_na_imputations(ts_data, ts_filled) +
 DB_fitted <- DB %>%
   mutate(AQ_nox = ts_filled)
 
+
+
 # Plot the original and filled time series  
 ggplot_na_imputations(ts_data, ts_filled)
 
 # Plot the distribution of AQ_noxafter Kalman filtering
 hist(DB_fitted$AQ_nox, main = "Distribution after Kalman", col = "skyblue")
 
-# Define different split ratios to test
-split_ratios <- seq(0.6, 0.9, by = 0.05)  # Testing splits from 60% to 90% training data
+#transforming categorical variables into factors
+DB_fitted$Day_of_week <- as.factor(DB_fitted$Day_of_week)
+DB_fitted$Season <- as.factor(DB_fitted$Season)
+DB_fitted$WE_mode_wind_direction_100m <- as.factor(DB_fitted$WE_mode_wind_direction_100m)
+DB_fitted$WE_mode_wind_direction_10m <- as.factor(DB_fitted$WE_mode_wind_direction_10m)
 
-# Initialize storage for results
-split_results <- data.frame(
-  train_ratio = numeric(),
-  rmse = numeric(),
-  rmse_sd = numeric()  # Standard deviation of RMSE across folds
-)
+#Dropping constant columns or all NAs and useless chr
+DB_fitted <- DB_fitted[, sapply(DB_fitted, function(x) {
+  !all(is.na(x)) && length(unique(na.omit(x))) > 1
+})]
+DB_fitted <- DB_fitted[, !(names(DB_fitted) %in% c("Province", "IDStations"))]
 
-# Number of cross-validation folds
-n_folds <- 5
+# keep only columns with at least o90% of not NAs data
+DB_fitted <- DB_fitted[, colMeans(!is.na(DB_fitted)) > 0.9]
 
-# Function to evaluate split ratio
-evaluate_split <- function(train_ratio, data) {
-  # Initialize vector to store RMSE values for each fold
-  fold_rmses <- numeric(n_folds)
-  
-  # Create folds
-  set.seed(123)  # For reproducibility
-  folds <- cut(seq(1, nrow(data)), breaks = n_folds, labels = FALSE)
-  
-  for(fold in 1:n_folds) {
-    # Create train and test indices for this fold
-    test_indices <- which(folds == fold)
-    train_indices <- which(folds != fold)
-    
-    # Further split the training data according to the ratio
-    n_train <- floor(length(train_indices) * train_ratio)
-    train_indices <- sample(train_indices, n_train)
-    
-    # Split the data
-    train_data <- data[train_indices, ]
-    test_data <- data[test_indices, ]
-    
-    # Fit model with 
-    model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
-    
-  
-    # Make predictions
-    predictions <- predict(model, newdata = test_data)
-    
-    # Calculate RMSE for this fold
-    fold_rmses[fold] <- sqrt(mean((test_data$AQ_nox - predictions)^2, na.rm = TRUE))
+# We imput all NAs remaining
+for (col in names(DB_clean)) {
+  if (is.numeric(DB_clean[[col]])) {
+    DB_clean[[col]] <- na_interpolation(DB_clean[[col]])
   }
-  
-  # Return mean and standard deviation of RMSE
-  return(list(
-    mean_rmse = mean(fold_rmses),
-    sd_rmse = sd(fold_rmses)
-  ))
 }
 
-# Perform grid search
-cat("Starting split ratio grid search...\n")
-for(ratio in split_ratios) {
-  cat(sprintf("Testing train ratio: %.2f\n", ratio))
-  results <- evaluate_split(ratio, DB)
-  
-  split_results <- rbind(split_results, data.frame(
-    train_ratio = ratio,
-    rmse = results$mean_rmse,
-    rmse_sd = results$sd_rmse
-  ))
-}
 
-# Find best split ratio (minimum RMSE)
-best_ratio_idx <- which.min(split_results$rmse)
-best_ratio <- split_results$train_ratio[best_ratio_idx]
 
-cat("\nResults of split ratio grid search:\n")
-print(split_results)
+#let's remove all NAs
+DB_clean <- na.omit(DB_fitted)
 
-cat("\nBest train ratio:", best_ratio, "\n")
-cat("Best RMSE:", split_results$rmse[best_ratio_idx], "\n")
-cat("RMSE standard deviation:", split_results$rmse_sd[best_ratio_idx], "\n")
 
-# Plot results
-ggplot(split_results, aes(x = train_ratio)) +
-  geom_line(aes(y = rmse, color = "Mean RMSE")) +
-  geom_ribbon(aes(ymin = rmse - rmse_sd, ymax = rmse + rmse_sd, fill = "RMSE SD"), alpha = 0.2) +
-  geom_point(aes(y = rmse, color = "Mean RMSE")) +
-  labs(title = "Model Performance vs Train/Test Split Ratio",
-       x = "Training Data Ratio",
-       y = "RMSE",
-       color = "Metric",
-       fill = "Metric") +
-  scale_color_manual(values = c("Mean RMSE" = "blue")) +
-  scale_fill_manual(values = c("RMSE SD" = "blue")) +
+#Use LASSO to create best model with best possible variable selection
+# Prepare matrix (X) and target (y)
+X <- model.matrix(AQ_nox ~ . -1, data = DB_clean)
+y <- DB_clean$AQ_nox
+
+
+dim(X)  # Check dimensions of X
+
+# Run LASSO with cross-validation
+lasso_cv <- cv.glmnet(X, y, alpha = 1)
+
+# Best lambda
+best_lambda <- lasso_cv$lambda.min
+
+# Final model
+model <- glmnet(X, y, alpha = 1, lambda = best_lambda)
+
+# Coefficients
+coef(model)
+
+plot(lasso_cv)
+title("Cross-Validation Error vs Lambda") +
+  xlab("Lambda") +
+  ylab("Cross-Validation Error") +
   theme_minimal()
 
-# Use the best ratio for the final split
-set.seed(123)
-train_index <- sample(1:nrow(DB), floor(nrow(DB) * best_ratio))
-train_data <- DB[train_index, ]
-test_data <- DB[-train_index, ]
+#Residual analysis
+fitted_vals <- as.numeric(predict(model, newx = X))
+residuals   <- y - fitted_vals
 
-cat("\nFinal split sizes:\n")
-cat("Training set size:", nrow(train_data), "\n")
-cat("Test set size:", nrow(test_data), "\n")
-
-# LASSO?
-# Splitwise?
-# Build multiple linear regression model
-nox_model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
-
-# Print model summary
-summary(nox_model)
-
-# Make predictions on test set
-predictions <- predict(nox_model, newdata = test_data)
-
-sum(is.na(predictions))  # Controlla se ci sono valori NA nelle previsioni
-
-# Calculate RMSE
-rmse <- sqrt(mean((test_data$AQ_nox - predictions)^2, na.rm = TRUE))
-cat("Root Mean Square Error:", rmse, "\n")
-
-# Plot actual vs predicted values
-ggplot(data.frame(actual = test_data$AQ_nox, predicted = predictions), 
-       aes(x = actual, y = predicted)) +
-  geom_point(alpha = 0.5) +
-  geom_abline(intercept = 0, slope = 1, color = "red", linetype = "dashed") +
-  labs(title = "Actual vs Predicted NOx Values",
-       x = "Actual NOx",
-       y = "Predicted NOx") +
-  theme_minimal()
-
-# Calculate residuals
-residuals <- test_data$AQ_nox - predictions
-
-# Control for NA values in residuals
-sum(is.na(residuals))
-
-
-
-# Create a data frame with residuals and actual values
-residual_df <- data.frame(
-  actual = test_data$AQ_nox,
-  predicted = predictions,
-  residuals = residuals,
-  time = test_data$Time
-)
-
-# Plot residuals vs predicted values
-ggplot(residual_df, aes(x = predicted, y = residuals)) +
-  geom_point(alpha = 0.5) +
-  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
-  geom_smooth(method = "loess", se = TRUE) +
-  labs(title = "Residuals vs Predicted Values",
-       x = "Predicted Values",
-       y = "Residuals") +
-  theme_minimal()
-
-# Plot residuals vs time
-ggplot(residual_df, aes(x = time, y = residuals)) +
-  geom_point(alpha = 0.5) +
-  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
-  geom_smooth(method = "loess", se = TRUE) +
-  labs(title = "Residuals vs Time",
-       x = "Time",
-       y = "Residuals") +
-  theme_minimal()
-
-# Plot residuals histogram with normal curve
-ggplot(residual_df, aes(x = residuals)) +
-  geom_histogram(aes(y = ..density..), bins = 30, fill = "lightblue", color = "black") +
-  stat_function(fun = dnorm, args = list(mean = mean(residual_df$residuals), 
-                                       sd = sd(residual_df$residuals)),
-                color = "red", size = 1) +
-  labs(title = "Distribution of Residuals",
-       x = "Residuals",
-       y = "Density") +
-  theme_minimal()
-
-# Calculate and plot autocorrelation of residuals
-acf_residuals <- acf(residuals, plot = FALSE)
-plot(acf_residuals, main = "Autocorrelation of Residuals")
-
-# Durbin-Watson test for autocorrelation
-library(lmtest)
-dwtest(nox_model)
-
-# Shapiro-Wilk test for normality of residuals
-shapiro.test(residuals)
-
-# Print summary statistics of residuals
-cat("\nResiduals Summary Statistics:\n")
+# Summary statistics
 summary(residuals)
-cat("\nStandard Deviation of Residuals:", sd(residuals), "\n")
+sd(residuals)
 
-# Load required package for ARMA modeling
-#install.packages("forecast")
-library(forecast)
+# Histogram + density
+hist(residuals,
+     main = "Histogram of Residuals",
+     xlab = "Residual",
+     col  = "lightgray",
+     border = "white")
+lines(density(residuals), lwd = 2)
 
-# Convert residuals to time series object
-residuals_ts <- ts(residuals, frequency = 24)  # Assuming daily data
+#normality check
+# QQ‐plot
+qqnorm(residuals)
+qqline(residuals, col = "red", lwd = 2)
 
-# Find best ARMA model using auto.arima
-best_arma <- auto.arima(residuals_ts, 
-                       seasonal = TRUE,
-                       stepwise = FALSE,
-                       approximation = FALSE,
-                       trace = TRUE)
+# Formal tests
+shapiro.test(residuals)      # Shapiro–Wilk
+library(moments)
+jarque.test(residuals)       # Jarque–Bera
 
-# Print the best model summary
-print(summary(best_arma))
+#Homoscedasticity (constant variance)
+# Residuals vs fitted
+library(ggplot2)
+ggplot(data.frame(fitted = fitted_vals, resid = residuals), 
+       aes(x = fitted, y = resid)) +
+  geom_point(alpha = 0.4) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Residuals vs Fitted",
+       x = "Fitted values",
+       y = "Residuals") +
+  theme_minimal()
 
-# Get the residuals from the ARMA model
-arma_residuals <- residuals(best_arma)
+# Breusch–Pagan test
+library(lmtest)
+# need a linear model wrapper for bp test:
+lm_wrapper <- lm(resid ~ fitted, data = data.frame(resid = residuals, fitted = fitted_vals))
+bptest(lm_wrapper)
 
-# Plot the original residuals vs ARMA model residuals
-par(mfrow = c(2, 2))
-plot(residuals_ts, main = "Original Residuals")
-plot(arma_residuals, main = "ARMA Model Residuals")
-acf(residuals_ts, main = "ACF of Original Residuals")
-acf(arma_residuals, main = "ACF of ARMA Residuals")
+# ACF plot
+acf(residuals, main = "ACF of Residuals")
 
-# Test for autocorrelation in ARMA residuals
-Box.test(arma_residuals, type = "Ljung-Box")
+# Ljung–Box test (e.g. up to lag 24 for hourly data)
+Box.test(residuals, lag = 24, type = 
+"Ljung-Box")
 
-# Shapiro test for normality of ARMA residuals
-shapiro.test(arma_residuals)
+#Residuals over time / by station
+# If you want to see time patterns, bind back into DB_clean:
+DB_clean$resid <- residuals
+DB_clean$fitted <- fitted_vals
+DB_clean$Time   <- Agrimonia_Dataset$Time[!is.na(Agrimonia_Dataset$AQ_nox)]  # align timestamps
 
-# Create a new model that combines the original regression with ARMA
-# First, get the fitted values from the original model
-fitted_values <- fitted(nox_model)
-
-# Create a new time series with the original data
-y_ts <- ts(train_data$AQ_nox, frequency = 24)
-
-cat("⏳ Starting ARIMA model fitting...\n")
-start_time <- Sys.time()
-# Fit ARIMA model to the original data
-best_arima <- auto.arima(y_ts, 
-                        xreg = model.matrix(nox_model)[,-1],  # Remove intercept
-                        seasonal = TRUE,
-                        stepwise = TRUE,
-                        approximation = TRUE)
-
-end_time <- Sys.time())
-cat("✅ Finished ARIMA model in", round(difftime(end_time, start_time, units = "mins"), 2), "minutes\n"
-
-# Print the combined model summary
-print(summary(best_arima))
-
-# Make predictions with the new model
-new_xreg <- model.matrix(nox_model, data = test_data)[,-1]  # Remove intercept
-arima_forecast <- forecast(best_arima, xreg = new_xreg, h = nrow(test_data))
-
-# Calculate new RMSE
-new_rmse <- sqrt(mean((test_data$AQ_nox - arima_forecast$mean)^2, na.rm = TRUE))
-cat("\nNew RMSE with ARIMA model:", new_rmse, "\n")
-
-# Compare original and new residuals
-par(mfrow = c(2, 2))
-plot(residuals, main = "Original Model Residuals")
-plot(arima_forecast$residuals, main = "ARIMA Model Residuals")
-acf(residuals, main = "ACF of Original Residuals")
-acf(arima_forecast$residuals, main = "ACF of ARIMA Residuals")
-
-# Test for autocorrelation in new residuals
-Box.test(arima_forecast$residuals, type = "Ljung-Box")
-
-# Shapiro test for new residuals
-shapiro.test(arima_forecast$residuals)
+ggplot(DB_clean, aes(x = Time, y = resid, color = Season)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(se = FALSE, color = "black") +
+  facet_wrap(~ NameStation) +
+  labs(title = "Residuals over Time by Station") +
+  theme_minimal()
 
