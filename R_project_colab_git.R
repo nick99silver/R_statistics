@@ -8,7 +8,7 @@ library(tidyverse)
 library(car) # vif
 library(glmnet) # LASSO
 library(moments) # jarque.test
-library(caret) # validazione esterna
+library(caret) # external validation
 library(DataExplorer)
 
 print("Libraries loaded")
@@ -137,9 +137,33 @@ library(zoo)
 
 # Interpola direttamente nella colonna AQ_nox
 # Rivedere interpolazione chiedendo a Otto, possible uso ARIMA per stimare i valori mancanti
-DB$AQ_nox <- na.approx(DB$AQ_nox)
+#DB$AQ_nox <- na.approx(DB$AQ_nox)
 
-sum(is.na(DB$AQ_nox))
+#installing library inputeTS
+library(imputeTS)
+
+
+ts_data <- ts(DB$AQ_nox, frequency = 24)
+
+# Visualizza i buchi
+ggplot_na_distribution(ts_data)
+
+# using ARIMA to fill missing values
+ts_filled <- na_kalman(ts_data, model = "auto.arima")
+
+#plotting NA to be fitted
+ggplot_na_imputations(ts_data, ts_filled) +
+  labs(title = "NA Imputation using Kalman Filter")
+
+#creating a new database with the fitted values
+DB_fitted <- DB %>%
+  mutate(AQ_nox = ts_filled)
+
+# Plot the original and filled time series  
+ggplot_na_imputations(ts_data, ts_filled)
+
+# Plot the distribution of AQ_noxafter Kalman filtering
+hist(DB_fitted$AQ_nox, main = "Distribution after Kalman", col = "skyblue")
 
 # Define different split ratios to test
 split_ratios <- seq(0.6, 0.9, by = 0.05)  # Testing splits from 60% to 90% training data
@@ -242,6 +266,8 @@ cat("\nFinal split sizes:\n")
 cat("Training set size:", nrow(train_data), "\n")
 cat("Test set size:", nrow(test_data), "\n")
 
+# LASSO?
+# Splitwise?
 # Build multiple linear regression model
 nox_model <- lm(AQ_nox ~ Time + Month_num + Day_of_week + Province, data = train_data)
 
@@ -370,12 +396,17 @@ fitted_values <- fitted(nox_model)
 # Create a new time series with the original data
 y_ts <- ts(train_data$AQ_nox, frequency = 24)
 
+cat("⏳ Starting ARIMA model fitting...\n")
+start_time <- Sys.time()
 # Fit ARIMA model to the original data
 best_arima <- auto.arima(y_ts, 
                         xreg = model.matrix(nox_model)[,-1],  # Remove intercept
                         seasonal = TRUE,
                         stepwise = TRUE,
                         approximation = TRUE)
+
+end_time <- Sys.time())
+cat("✅ Finished ARIMA model in", round(difftime(end_time, start_time, units = "mins"), 2), "minutes\n"
 
 # Print the combined model summary
 print(summary(best_arima))
