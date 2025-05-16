@@ -147,7 +147,14 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
 
 # Interpola direttamente nella colonna AQ_nox
 # Rivedere interpolazione chiedendo a Otto, possible uso ARIMA per stimare i valori mancanti
-#DB$AQ_nox <- na.approx(DB$AQ_nox)
+DB$AQ_nox <- na.approx(DB$AQ_nox)
+
+#testing stationarity
+library(tseries)
+# Augmented Dickey-Fuller test for stationarity of AQ_nox
+adf_result <- adf.test(DB$AQ_nox)
+print(adf_result)
+
 
 #select only considered columns
 MI_DB <- MI_DB %>%
