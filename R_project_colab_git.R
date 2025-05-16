@@ -286,3 +286,5 @@ ggplot(DB_clean, aes(x = Time, y = resid, color = Season)) +
   labs(title = "Residuals over Time by Station") +
   theme_minimal()
 
+#main
+
