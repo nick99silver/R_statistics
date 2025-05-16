@@ -63,6 +63,11 @@ stations_id   <- c(504, 583, 697)
 DB <- Agrimonia_Dataset %>% 
   filter(IDStations %in% stations_id)
 
+#Creating day_of_year and trend_time columns
+DB$day_of_year <- yday(DB$Time)
+DB$Trend <- as.numeric(DB$Time)
+
+
 # transforming Stations_name into categorical data
 DB$NameStation <- as.factor(DB$NameStation)
 
@@ -144,13 +149,38 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
 # Rivedere interpolazione chiedendo a Otto, possible uso ARIMA per stimare i valori mancanti
 #DB$AQ_nox <- na.approx(DB$AQ_nox)
 
-ts_data <- ts(DB$AQ_nox, frequency = 24)
+#select only considered columns
+MI_DB <- MI_DB %>%
+  select(IDStations,AQ_pm25, AQ_nox, WE_temp_2m, WE_wind_speed_10m_mean, WE_wind_speed_10m_max,
+         WE_wind_speed_100m_mean, WE_wind_speed_100m_max, WE_tot_precipitation, WE_surface_pressure,
+         WE_solar_radiation, WE_rh_mean, WE_blh_layer_min, WE_blh_layer_max, Month_num, Season, Day_of_week, 
+         day_of_year, Trend)
+BG_DB <- BG_DB %>%
+  select(IDStations,AQ_pm25, AQ_nox, WE_temp_2m, WE_wind_speed_10m_mean, WE_wind_speed_10m_max,
+         WE_wind_speed_100m_mean, WE_wind_speed_100m_max, WE_tot_precipitation, WE_surface_pressure,
+         WE_solar_radiation, WE_rh_mean, WE_blh_layer_min, WE_blh_layer_max, Month_num, Season, Day_of_week, 
+         day_of_year, Trend)
+MN_DB <- MN_DB %>%
+  select(IDStations,AQ_pm25, AQ_nox, WE_temp_2m, WE_wind_speed_10m_mean, WE_wind_speed_10m_max,
+         WE_wind_speed_100m_mean, WE_wind_speed_100m_max, WE_tot_precipitation, WE_surface_pressure,
+         WE_solar_radiation, WE_rh_mean, WE_blh_layer_min, WE_blh_layer_max, Month_num, Season, Day_of_week, 
+         day_of_year, Trend)
+
+#Applying kalman to all numeric columns in my dataset
+vars_to_impute <- c(
+  "AQ_pm25", "AQ_nox", "WE_temp_2m", "WE_wind_speed_10m_mean", "WE_wind_speed_10m_max",
+  "WE_wind_speed_100m_mean", "WE_wind_speed_100m_max", "WE_tot_precipitation", "WE_surface_pressure",
+  "WE_solar_radiation", "WE_rh_mean", "WE_blh_layer_min", "WE_blh_layer_max"
+)
+
+for (col in vars_to_impute) {
+  if (col %in% names(BG_DB)) {
+    BG_DB[[col]] <- na_kalman(ts(BG_DB[[col]], frequency = 365), model = "auto.arima")
+  }
+}
 
 # Visualizza i buchi
-ggplot_na_distribution(ts_data)
-
-# using ARIMA to fill missing values
-ts_filled <- na_kalman(ts_data, model = "auto.arima")
+#ggplot_na_distribution(ts_data)
 
 #plotting NA to be fitted
 ggplot_na_imputations(ts_data, ts_filled) +
@@ -180,20 +210,7 @@ DB_fitted <- DB_fitted[, sapply(DB_fitted, function(x) {
 })]
 DB_fitted <- DB_fitted[, !(names(DB_fitted) %in% c("Province", "IDStations"))]
 
-# keep only columns with at least o90% of not NAs data
-DB_fitted <- DB_fitted[, colMeans(!is.na(DB_fitted)) > 0.9]
-
-# We imput all NAs remaining
-for (col in names(DB_clean)) {
-  if (is.numeric(DB_clean[[col]])) {
-    DB_clean[[col]] <- na_interpolation(DB_clean[[col]])
-  }
-}
-
-
-
-#let's remove all NAs
-DB_clean <- na.omit(DB_fitted)
+#merging all stations databses into DB 
 
 
 #Use LASSO to create best model with best possible variable selection
@@ -285,6 +302,4 @@ ggplot(DB_clean, aes(x = Time, y = resid, color = Season)) +
   facet_wrap(~ NameStation) +
   labs(title = "Residuals over Time by Station") +
   theme_minimal()
-
-#main
-
+#Main
