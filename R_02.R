@@ -177,25 +177,19 @@ sarimax_mn <- auto.arima(
 summary(sarimax_mn)
 checkresiduals(sarimax_mn)
 
-# Applica il log solo ai valori positivi
-BG_DBi$log_AQ_nox <- log(BG_DBi$AQ_nox + 1) # +1 per evitare log(0)
-ts_log_aq_nox <- ts(BG_DBi$log_AQ_nox, frequency = 365)
-
-# Modello SARIMA sui log
-model_log_sarima <- auto.arima(ts_log_aq_nox, seasonal = TRUE, trace = TRUE)
-summary(model_log_sarima)
-checkresiduals(model_log_sarima)
-
-# SARIMAX sui log con le stesse variabili selezionate dal LASSO
-X_lasso_bg_log <- as.matrix(BG_DBi[, selected_vars_bg])
-sarimax_bg_log <- auto.arima(
-  ts_log_aq_nox,
-  xreg = X_lasso_bg_log,
+# Modello SARIMA con stagionalità annuale (m = 365)
+BG_DBi$AQ_nox_lag365 <- dplyr::lag(BG_DBi$AQ_nox, 365)
+X_lag365 <- as.matrix(BG_DBi$AQ_nox_lag365)
+sarimax_bg_lag365 <- auto.arima(
+  ts_aq_nox,
+  xreg = X_lag365,
   seasonal = TRUE,
   trace = TRUE
 )
-summary(sarimax_bg_log)
-checkresiduals(sarimax_bg_log)
+summary(sarimax_bg_lag365)
+checkresiduals(sarimax_bg_lag365)
+
+
 
 
 
