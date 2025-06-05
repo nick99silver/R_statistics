@@ -16,7 +16,7 @@ library(openxlsx)
 library(tseries) # For adf.test
 library(forecast)
 library(future)
-
+library(rugarch) # GARCH models
 # Plan for parallel processing
 plan(multisession, workers = parallel::detectCores())
 
@@ -71,6 +71,7 @@ print(ljung_result)
 ts_aq_nox <- ts(BG_DBi$AQ_nox, frequency = 365)
 model_sarima <- auto.arima(ts_aq_nox, seasonal = TRUE, trace = TRUE)
 summary(model_sarima)
+checkresiduals(model_sarima)
 
 # Diagnostica dei residui
 checkresiduals(model_sarima)
@@ -139,6 +140,13 @@ sarimax_bg <- auto.arima(
 summary(sarimax_bg)
 checkresiduals(sarimax_bg)
 
+# Aggiunta dei lag come regressori
+BG_DBi$AQ_nox_lag1 <- dplyr::lag(BG_DBi$AQ_nox, 1)
+BG_DBi$AQ_nox_lag7 <- dplyr::lag(BG_DBi$AQ_nox, 7)
+# ...aggiungi altri lag se necessario
+X_lasso_ext <- as.matrix(BG_DBi[, c(selected_vars_bg, "AQ_nox_lag1", "AQ_nox_lag7")])
+sarimax_bg_ext <- auto.arima(ts_aq_nox, xreg = X_lasso_ext, seasonal = TRUE, trace = TRUE)
+checkresiduals(sarimax_bg_ext)
 # --- SARIMAX su MI_DBi ---
 cat("\n--- SARIMAX MI_DBi ---\n")
 lasso_coef_mi <- coef(cv.lasso_mi, s = "lambda.min")
@@ -168,6 +176,30 @@ sarimax_mn <- auto.arima(
 )
 summary(sarimax_mn)
 checkresiduals(sarimax_mn)
+
+# Applica il log solo ai valori positivi
+BG_DBi$log_AQ_nox <- log(BG_DBi$AQ_nox + 1) # +1 per evitare log(0)
+ts_log_aq_nox <- ts(BG_DBi$log_AQ_nox, frequency = 365)
+
+# Modello SARIMA sui log
+model_log_sarima <- auto.arima(ts_log_aq_nox, seasonal = TRUE, trace = TRUE)
+summary(model_log_sarima)
+checkresiduals(model_log_sarima)
+
+# SARIMAX sui log con le stesse variabili selezionate dal LASSO
+X_lasso_bg_log <- as.matrix(BG_DBi[, selected_vars_bg])
+sarimax_bg_log <- auto.arima(
+  ts_log_aq_nox,
+  xreg = X_lasso_bg_log,
+  seasonal = TRUE,
+  trace = TRUE
+)
+summary(sarimax_bg_log)
+checkresiduals(sarimax_bg_log)
+
+
+
+
 
 
 
