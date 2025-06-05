@@ -56,7 +56,7 @@ print(ljung_result)
 
 # Modello SARIMA con stagionalità annuale (m = 365)
 ts_aq_nox <- ts(BG_DBi$AQ_nox, frequency = 365)
-model_sarima <- auto.arima(ts_aq_nox, seasonal = TRUE)
+model_sarima <- auto.arima(ts_aq_nox, seasonal = TRUE, trace = TRUE)
 summary(model_sarima)
 
 # Diagnostica dei residui
