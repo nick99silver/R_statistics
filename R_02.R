@@ -15,6 +15,10 @@ library(imputeTS)
 library(openxlsx)
 library(tseries) # For adf.test
 library(forecast)
+library(future)
+
+# Plan for parallel processing
+plan(multisession, workers = parallel::detectCores())
 
 print("Libraries loaded")
 BG_DBi<- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/BG_DB_impute.xlsx", sheet = "Sheet1")
@@ -39,6 +43,15 @@ print(coef(cv.lasso, s = "lambda.min"))
 
 # (Opzionale) Visualizza la curva di cross-validation
 plot(cv.lasso)
+
+# Ottieni i nomi delle variabili selezionate dal LASSO (escludi l'intercetta)
+lasso_coef <- coef(cv.lasso, s = "lambda.min")
+selected_vars <- rownames(lasso_coef)[which(lasso_coef != 0)]
+selected_vars <- setdiff(selected_vars, "(Intercept)")
+print(selected_vars)
+
+# Crea la matrice dei regressori esterni
+X_lasso <- as.matrix(BG_DBi[, selected_vars])
 
 # Plot ACF e PACF per AQ_nox
 par(mfrow = c(1, 2)) # due grafici affiancati
@@ -111,6 +124,16 @@ ts_aq_nox_mn <- ts(MN_DBi$AQ_nox, frequency = 365)
 model_sarima_mn <- auto.arima(ts_aq_nox_mn, seasonal = TRUE)
 summary(model_sarima_mn)
 checkresiduals(model_sarima_mn)
+# --- SARIMAX su BG_DBi ---
+cat("\n--- SARIMAX BG_DBi ---\n")
+sarimax_bg <- auto.arima(
+  ts_aq_nox,
+  xreg = X_lasso,
+  seasonal = TRUE,
+  trace = TRUE
+)
+summary(sarimax_bg)
+checkresiduals(sarimax_bg)
 
 
 
