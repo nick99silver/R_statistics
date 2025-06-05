@@ -126,14 +126,48 @@ summary(model_sarima_mn)
 checkresiduals(model_sarima_mn)
 # --- SARIMAX su BG_DBi ---
 cat("\n--- SARIMAX BG_DBi ---\n")
+lasso_coef_bg <- coef(cv.lasso, s = "lambda.min")
+selected_vars_bg <- rownames(lasso_coef_bg)[which(lasso_coef_bg != 0)]
+selected_vars_bg <- setdiff(selected_vars_bg, "(Intercept)")
+X_lasso_bg <- as.matrix(BG_DBi[, selected_vars_bg])
 sarimax_bg <- auto.arima(
   ts_aq_nox,
-  xreg = X_lasso,
+  xreg = X_lasso_bg,
   seasonal = TRUE,
   trace = TRUE
 )
 summary(sarimax_bg)
 checkresiduals(sarimax_bg)
+
+# --- SARIMAX su MI_DBi ---
+cat("\n--- SARIMAX MI_DBi ---\n")
+lasso_coef_mi <- coef(cv.lasso_mi, s = "lambda.min")
+selected_vars_mi <- rownames(lasso_coef_mi)[which(lasso_coef_mi != 0)]
+selected_vars_mi <- setdiff(selected_vars_mi, "(Intercept)")
+X_lasso_mi <- as.matrix(MI_DBi[, selected_vars_mi])
+sarimax_mi <- auto.arima(
+  ts_aq_nox_mi,
+  xreg = X_lasso_mi,
+  seasonal = TRUE,
+  trace = TRUE
+)
+summary(sarimax_mi)
+checkresiduals(sarimax_mi)
+
+# --- SARIMAX su MN_DBi ---
+cat("\n--- SARIMAX MN_DBi ---\n")
+lasso_coef_mn <- coef(cv.lasso_mn, s = "lambda.min")
+selected_vars_mn <- rownames(lasso_coef_mn)[which(lasso_coef_mn != 0)]
+selected_vars_mn <- setdiff(selected_vars_mn, "(Intercept)")
+X_lasso_mn <- as.matrix(MN_DBi[, selected_vars_mn])
+sarimax_mn <- auto.arima(
+  ts_aq_nox_mn,
+  xreg = X_lasso_mn,
+  seasonal = TRUE,
+  trace = TRUE
+)
+summary(sarimax_mn)
+checkresiduals(sarimax_mn)
 
 
 
