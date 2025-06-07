@@ -35,11 +35,11 @@ BG_DBi_clean <- BG_DBi %>% select(-IDStations)
 ###########################################################
 
 # 2. Se volete forzare i lag sulla settimana per alcune variabili, usate sta roba
-vars_to_lag <- c("AQ_pm25", "WE_temp_2m", "WE_wind_speed_10m_mean")
+vars_to_lag <- c("WE_temp_2m", "WE_blh_layer_max")
 
 for (v in vars_to_lag) {
   lag_name <- paste0(v, "_lag")
-  BG_DBi_clean[[lag_name]] <- dplyr::lag(BG_DBi_clean[[v]], 7)
+  BG_DBi_clean[[lag_name]] <- dplyr::lag(BG_DBi_clean[[v]], 10)
 }
 
 ###########################################################
@@ -80,21 +80,16 @@ x_lasso <- as.matrix(BG_DBi_clean[, selected_vars])
 x_lasso_clean <- x_lasso[, apply(x_lasso, 2, var) > 0]
 
 
-# 7. Serie temporale e SARIMAX
-y_ts <- ts(y, frequency = 7)
+# 7. Serie temporale e TBATS
+y_ts <- msts(y, seasonal.periods = c(7, 365))  # Define multiple seasonal periods (weekly and yearly)
 
-fit_sarimax <- auto.arima(y_ts,
-                          xreg = x_lasso_clean,
-                          seasonal = TRUE,
-                          stepwise = TRUE,
-                          trace = TRUE,
-                          approximation = FALSE)
+fit_tbats <- tbats(y_ts)  # Fit TBATS model
 
 # 8. Output
-summary(fit_sarimax)
-checkresiduals(fit_sarimax)
+summary(fit_tbats)
+checkresiduals(fit_tbats)
 
-residui <- residuals(fit_sarimax)
+residui <- residuals(fit_tbats)
 
 # Qui mi tocca usare ugarch perchè almeno gli posso inserire un arma per togliere autocorrelazione nei valori. Otto lui usava garchfit facendo arma () + garch ()
 
@@ -116,7 +111,22 @@ resid_std_ts <- ts(resid_std)
 acf(resid_std_ts, lag.max = 20, main = "ACF dei residui standardizzati GARCH")
 pacf(resid_std_ts, lag.max = 20, main = "PACF dei residui standardizzati GARCH")
 
-Box.test(residuals(fit_garch, standardize = TRUE)^2, lag = 20, type = "Ljung-Box")
+Box.test(residuals(fit_garch, standardize = TRUE), lag = 20, type = "Ljung-Box")
 
 
 #spoiler, la varianza viene gestita bene ma con quel modello di arma mi da ancora ancora autocorrelazione
+
+# Perform CCF analysis to identify lagged variables
+ccf_analysis <- function(target, predictors, max_lag = 20) {
+  for (var in predictors) {
+    cat("\nCCF between", target, "and", var, ":\n")
+    ccf_result <- ccf(BG_DBi[[target]], BG_DBi[[var]], lag.max = max_lag, plot = TRUE, main = paste("CCF:", target, "vs", var))
+  }
+}
+
+# Define target and predictors for CCF analysis
+target_var <- "AQ_nox"
+predictor_vars <- c("AQ_pm25", "WE_temp_2m", "WE_wind_speed_10m_mean")
+
+# Run CCF analysis
+ccf_analysis(target_var, predictor_vars)
