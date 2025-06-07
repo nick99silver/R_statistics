@@ -95,7 +95,7 @@ residui <- residuals(fit_tbats)
 
 spec <- ugarchspec(
   variance.model = list(model = "sGARCH", garchOrder = c(1, 2)),
-  mean.model = list(armaOrder = c(1, 1), include.mean = TRUE),
+  mean.model = list(armaOrder = c(1, 2), include.mean = TRUE),
   distribution.model = "std"  # Student-t per gestire code larghe
 )
 
