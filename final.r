@@ -143,5 +143,68 @@ Acf(residuals, main = "Autocorrelation of Residuals")
 
 # we can now say LASSO sucks
 
+# Convert the target variable to a time series object
+# Assuming 'AQ_nox' is the target variable and has a time component
+ts_data <- ts(BG_DBi_clean$AQ_nox, frequency = 7)  # Adjust frequency if needed (e.g., 12 for monthly data)
+
+# Fit the best ARIMA model
+cat("Fitting the best ARIMA model...\n")
+best_arima <- auto.arima(ts_data, seasonal = TRUE, stepwise = FALSE, approximation = FALSE)
+print(summary(best_arima))
+
+# Extract residuals from the ARIMA model
+arima_residuals <- residuals(best_arima)
+
+# Plot ACF and PACF of ARIMA residuals
+Acf(arima_residuals, main = "ACF of ARIMA Residuals")
+Pacf(arima_residuals, main = "PACF of ARIMA Residuals")
+
+library(rugarch)
+
+# Define a GARCH(1,1) model with a normal distribution
+spec_garch <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
+  distribution.model = "norm"
+)
+
+# Fit the GARCH model to the ARIMA residuals
+cat("Fitting the GARCH model...\n")
+fit_garch <- ugarchfit(spec = spec_garch, data = arima_residuals)
+
+# Print the GARCH model summary
+cat("GARCH Model Summary:\n")
+show(fit_garch)
+
+# Extract standardized residuals
+garch_residuals <- residuals(fit_garch, standardize = TRUE)
+
+# Plot ACF and PACF of GARCH residuals
+Acf(garch_residuals, main = "ACF of GARCH Residuals")
+Pacf(garch_residuals, main = "PACF of GARCH Residuals")
+
+# Perform diagnostic tests
+cat("Jarque-Bera Test for Normality:\n")
+print(jarque.test(garch_residuals))
+
+cat("Ljung-Box Test for Autocorrelation:\n")
+print(Box.test(garch_residuals, lag = 20, type = "Ljung-Box"))
+
+# Get ARIMA fitted values
+arima_fitted <- fitted(best_arima)
+
+# Combine ARIMA fitted values with GARCH residuals to get final predictions
+final_predictions <- arima_fitted + garch_residuals
+
+# Calculate RMSE for the final model
+actual_values <- ts_data  # Assuming ts_data contains the actual values
+final_rmse <- sqrt(mean((actual_values - final_predictions)^2))
+cat("Root Mean Squared Error (RMSE) for the Final Model (ARIMA + GARCH):", final_rmse, "\n")
+
+
+
+
+
+
 
 

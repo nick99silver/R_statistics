@@ -171,7 +171,7 @@ library(rugarch)
 # Define GARCH(1,1) model with t-distribution
 spec_garch <- ugarchspec(
   variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
-  mean.model = list(armaOrder = c(7, 1), include.mean = FALSE),
+  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
   distribution.model = "std"
 )
 
@@ -193,6 +193,12 @@ Pacf(garch_resid, main = "PACF of GARCH Standardized Residuals")
 qqnorm(garch_resid, main = "Q-Q Plot of GARCH Residuals")
 qqline(garch_resid, col = "red", lwd = 2)
 
+#Transforming garch_resid in vector
+garch_resid <- as.vector(garch_resid)
+
+#transforming garch_resid in logaritmic
+garch_resid <- log(abs(garch_resid) + 1e-6)  # Adding a small constant to avoid log(0)
+
 # Jarque-Bera test for normality
 cat("Jarque-Bera Test for GARCH Residuals:\n")
 print(jarque.test(garch_resid))
@@ -200,3 +206,19 @@ print(jarque.test(garch_resid))
 # Ljung-Box test for autocorrelation
 cat("Ljung-Box Test for GARCH Residuals:\n")
 print(Box.test(garch_resid, lag = 20, type = "Ljung-Box"))
+
+cat("ARCH Test for Homoskedasticity:\n")
+if (exists("garch_resid")) {
+  arch_test <- ArchTest(garch_resid, lags = 12)
+  print(arch_test)
+} else {
+  cat("Error: 'garch_resid' object not found. Ensure the GARCH model is fitted correctly.\n")
+}
+
+# Test if the mean of residuals is 0
+cat("Test if the mean of residuals is 0:\n")
+mean_residuals <- mean(garch_resid)
+cat("Mean of residuals:", mean_residuals, "\n")
+t_test <- t.test(garch_resid, mu = 0)
+print(t_test)
+
