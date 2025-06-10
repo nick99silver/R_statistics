@@ -222,3 +222,134 @@ cat("Mean of residuals:", mean_residuals, "\n")
 t_test <- t.test(garch_resid, mu = 0)
 print(t_test)
 
+# Load the MI_DBi dataset
+MI_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/MI_DB_impute.xlsx", sheet = "Sheet1")
+
+# Clean the MI_DBi dataset
+MI_DBi_clean <- MI_DBi %>% select(-IDStations)  # Remove the "IDStations" column
+MI_DBi_clean <- MI_DBi_clean %>% filter(!is.na(AQ_nox))  # Remove rows with missing AQ_nox values
+
+# Split the data into training (70%) and testing (30%) sets
+set.seed(123)  # Set seed for reproducibility
+MI_sample_index <- sample(1:nrow(MI_DBi_clean), size = 0.7 * nrow(MI_DBi_clean))
+MI_train_data <- MI_DBi_clean[MI_sample_index, ]
+MI_test_data <- MI_DBi_clean[-MI_sample_index, ]
+
+# Build the random forest model predicting AQ_nox using all other predictors
+MI_rf_model <- randomForest(AQ_nox ~ ., data = MI_train_data)
+print(MI_rf_model)
+
+# Use the model to predict AQ_nox on the test set
+MI_predictions <- predict(MI_rf_model, newdata = MI_test_data)
+
+# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE)
+MI_mse <- mean((MI_predictions - MI_test_data$AQ_nox)^2)
+MI_rmse <- sqrt(MI_mse)
+cat("Mean Squared Error (MSE) for MI_DBi:", MI_mse, "\n")
+cat("Root Mean Squared Error (RMSE) for MI_DBi:", MI_rmse, "\n")
+
+# Calculate residuals
+MI_residuals <- MI_test_data$AQ_nox - MI_predictions
+
+# Fit an ARMA model to the residuals
+MI_arma_model <- auto.arima(MI_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
+MI_arma_residuals <- residuals(MI_arma_model)
+
+# Fit a GARCH model to the ARMA residuals
+MI_spec_garch <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
+  distribution.model = "std"
+)
+MI_fit_garch <- ugarchfit(spec = MI_spec_garch, data = MI_arma_residuals)
+
+# Extract standardized residuals from the GARCH model
+MI_garch_resid <- residuals(MI_fit_garch, standardize = TRUE)
+
+# Perform diagnostic tests
+cat("ARCH Test for Homoskedasticity (MI_DBi):\n")
+if (exists("MI_garch_resid")) {
+  MI_arch_test <- ArchTest(MI_garch_resid, lags = 12)
+  print(MI_arch_test)
+} else {
+  cat("Error: 'MI_garch_resid' object not found. Ensure the GARCH model is fitted correctly.\n")
+}
+
+cat("Test if the mean of residuals is 0 (MI_DBi):\n")
+MI_mean_residuals <- mean(MI_garch_resid)
+cat("Mean of residuals (MI_DBi):", MI_mean_residuals, "\n")
+MI_t_test <- t.test(MI_garch_resid, mu = 0)
+print(MI_t_test)
+
+# Additional diagnostic plots
+Acf(MI_garch_resid, main = "ACF of GARCH Standardized Residuals (MI_DBi)")
+Pacf(MI_garch_resid, main = "PACF of GARCH Standardized Residuals (MI_DBi)")
+qqnorm(MI_garch_resid, main = "Q-Q Plot of GARCH Residuals (MI_DBi)")
+qqline(MI_garch_resid, col = "red", lwd = 2)
+
+# Load the MN_DBi dataset
+MN_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/MN_DB_impute.xlsx", sheet = "Sheet1")
+
+# Clean the MN_DBi dataset
+MN_DBi_clean <- MN_DBi %>% select(-IDStations)  # Remove the "IDStations" column
+MN_DBi_clean <- MN_DBi_clean %>% filter(!is.na(AQ_nox))  # Remove rows with missing AQ_nox values
+
+# Split the data into training (70%) and testing (30%) sets
+set.seed(123)  # Set seed for reproducibility
+MN_sample_index <- sample(1:nrow(MN_DBi_clean), size = 0.7 * nrow(MN_DBi_clean))
+MN_train_data <- MN_DBi_clean[MN_sample_index, ]
+MN_test_data <- MN_DBi_clean[-MN_sample_index, ]
+
+# Build the random forest model predicting AQ_nox using all other predictors
+MN_rf_model <- randomForest(AQ_nox ~ ., data = MN_train_data)
+print(MN_rf_model)
+
+# Use the model to predict AQ_nox on the test set
+MN_predictions <- predict(MN_rf_model, newdata = MN_test_data)
+
+# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE)
+MN_mse <- mean((MN_predictions - MN_test_data$AQ_nox)^2)
+MN_rmse <- sqrt(MN_mse)
+cat("Mean Squared Error (MSE) for MN_DBi:", MN_mse, "\n")
+cat("Root Mean Squared Error (RMSE) for MN_DBi:", MN_rmse, "\n")
+
+# Calculate residuals
+MN_residuals <- MN_test_data$AQ_nox - MN_predictions
+
+# Fit an ARMA model to the residuals
+MN_arma_model <- auto.arima(MN_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
+MN_arma_residuals <- residuals(MN_arma_model)
+
+# Fit a GARCH model to the ARMA residuals
+MN_spec_garch <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
+  distribution.model = "std"
+)
+MN_fit_garch <- ugarchfit(spec = MN_spec_garch, data = MN_arma_residuals)
+
+# Extract standardized residuals from the GARCH model
+MN_garch_resid <- residuals(MN_fit_garch, standardize = TRUE)
+
+# Perform diagnostic tests
+cat("ARCH Test for Homoskedasticity (MN_DBi):\n")
+if (exists("MN_garch_resid")) {
+  MN_arch_test <- ArchTest(MN_garch_resid, lags = 12)
+  print(MN_arch_test)
+} else {
+  cat("Error: 'MN_garch_resid' object not found. Ensure the GARCH model is fitted correctly.\n")
+}
+
+cat("Test if the mean of residuals is 0 (MN_DBi):\n")
+MN_mean_residuals <- mean(MN_garch_resid)
+cat("Mean of residuals (MN_DBi):", MN_mean_residuals, "\n")
+MN_t_test <- t.test(MN_garch_resid, mu = 0)
+print(MN_t_test)
+
+# Additional diagnostic plots
+Acf(MN_garch_resid, main = "ACF of GARCH Standardized Residuals (MN_DBi)")
+Pacf(MN_garch_resid, main = "PACF of GARCH Standardized Residuals (MN_DBi)")
+qqnorm(MN_garch_resid, main = "Q-Q Plot of GARCH Residuals (MN_DBi)")
+qqline(MN_garch_resid, col = "red", lwd = 2)
+
+
