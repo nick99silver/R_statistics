@@ -256,8 +256,8 @@ cat("Ljung-Box Test for GARCH Residuals:\n")
 print(Box.test(garch_resid, lag = 20, type = "Ljung-Box"))
 
 cat("ARCH Test for Homoskedasticity:\n")
-  arch_test <- ArchTest(garch_resid, lags = 12)
-  print(arch_test)
+arch_test <- ArchTest(garch_resid, lags = 12)
+print(arch_test)
 
 # Test if the mean of residuals is 0
 cat("Test if the mean of residuals is 0:\n")
@@ -289,29 +289,37 @@ cat("Baseline Mean for AQ_nox:", baseline_mean, "\n")
 baseline_rmse <- sqrt(mean((MI_DBi_clean$AQ_nox - baseline_mean)^2))
 cat("Baseline RMSE for AQ_nox:", baseline_rmse, "\n")
 
-# Split the data into training (70%) and testing (30%) sets
-set.seed(123)  # Set seed for reproducibility
-MI_sample_index <- sample(1:nrow(MI_DBi_clean), size = 0.7 * nrow(MI_DBi_clean))
-MI_train_data <- MI_DBi_clean[MI_sample_index, ]
-MI_test_data <- MI_DBi_clean[-MI_sample_index, ]
+#creating train + test data
+MI_train_data <- MI_DBi_clean %>% filter(Trend <= cutoff_trend)
+MI_test_data  <- MI_DBi_clean %>% filter(Trend > cutoff_trend)
 
-# Build the random forest model predicting AQ_nox using all other predictors
+# Build the random forest model predicting AQ_nox using all other predictors from train set
 MI_rf_model <- randomForest(AQ_nox ~ ., data = MI_train_data)
 print(MI_rf_model)
 
 # Use the model to predict AQ_nox on the test set
 MI_predictions <- predict(MI_rf_model, newdata = MI_test_data)
 
-# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE)
+# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE) on train set
+MI_train_predictions <- predict(MI_rf_model, newdata = MI_train_data)
+MI_train_mse <- mean((MI_train_predictions - MI_train_data$AQ_nox)^2)
+MI_train_rmse <- sqrt(MI_train_mse)
+cat("Train Mean Squared Error (MSE) for MI_DBi:", MI_train_mse, "\n")
+cat("Train Root Mean Squared Error (RMSE) for MI_DBi:", MI_train_rmse, "\n")
+
+# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE) on test set
 MI_mse <- mean((MI_predictions - MI_test_data$AQ_nox)^2)
 MI_rmse <- sqrt(MI_mse)
 cat("Mean Squared Error (MSE) for MI_DBi:", MI_mse, "\n")
 cat("Root Mean Squared Error (RMSE) for MI_DBi:", MI_rmse, "\n")
 
-# Calculate residuals
-MI_residuals <- MI_test_data$AQ_nox - MI_predictions
+# Calculate test residuals
+MI_test_residuals <- MI_test_data$AQ_nox - MI_predictions
 
-ggplot(plot_data, aes(x = Actual, y = MI_predictions)) +
+# calculate traiin residuals
+MI_train_residuals <- MI_train_data$AQ_nox - MI_train_predictions
+
+ggplot(plot_data, aes(x = Actual, y = MI_test_residuals)) +
   geom_point(color = "blue", alpha = 0.6) +
   geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
   labs(
@@ -322,7 +330,7 @@ ggplot(plot_data, aes(x = Actual, y = MI_predictions)) +
   theme_minimal()
 
 # Plot residuals
-ggplot(residual_plot_data, aes(x = Actual, y = MI_residuals)) +
+ggplot(residual_plot_data, aes(x = Actual, y = MI_test_residuals)) +
   geom_point(color = "blue", alpha = 0.6) +
   geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
   labs(
@@ -333,7 +341,7 @@ ggplot(residual_plot_data, aes(x = Actual, y = MI_residuals)) +
   theme_minimal()
 
 # Plot histogram of residuals to check normality
-ggplot(residual_plot_data, aes(x = MI_residuals)) +
+ggplot(residual_plot_data, aes(x = MI_test_residuals)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   labs(
     title = "Histogram of Residuals MI",
@@ -343,90 +351,115 @@ ggplot(residual_plot_data, aes(x = MI_residuals)) +
   theme_minimal()
 
 # Perform Shapiro-Wilk test for normality
-shapiro_test <- shapiro.test(MI_residuals)
+shapiro_test <- shapiro.test(MI_test_residuals)
 cat("Shapiro-Wilk Test for Normality:\n")
 print(shapiro_test)
 
 # Perform Durbin-Watson test for autocorrelation
 library(lmtest)
-dw_test <- dwtest(test_data$AQ_nox ~ MI_residuals)
+dw_test <- dwtest(test_data$AQ_nox ~ MI_test_residuals)
 cat("Durbin-Watson Test for Autocorrelation:\n")
 print(dw_test)
 
 # Q-Q plot for residuals
-qqnorm(MI_residuals)
-qqline(MI_residuals, col = "red", lwd = 2)
+qqnorm(MI_test_residuals)
+qqline(MI_test_residuals, col = "red", lwd = 2)
 
 # ACF plot for residuals
 library(forecast)
-Acf(MI_residuals, main = "Autocorrelation of Residuals")
+Acf(MI_test_residuals, main = "Autocorrelation of Residuals")
 
 # PACF plot for residuals
 library(forecast)
-Pacf(MI_residuals, main = "Partial Autocorrelation of Residuals")
+Pacf(MI_test_residuals, main = "Partial Autocorrelation of Residuals")
 
-# Fit an ARMA model to the residuals
-MI_arma_model <- auto.arima(MI_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
-MI_arma_residuals <- residuals(MI_arma_model)
+#train arma model on train residuals
+MI_arma_model <- auto.arima(MI_train_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
+#calculate ARMA train residuals
+MI_arma_train_residuals <- residuals(MI_arma_model)
+#print ARMA
+cat("ARMA Model Summary:\n")
+print(MI_arma_model)
 
-#Calculate corrected RMSE after ARMA modeling
-MI_corrected_mse <- mean(MI_arma_residuals^2)
-MI_corrected_rmse <- sqrt(MI_corrected_mse)
-cat("Corrected RMSE with ARMA residual modeling (MI):", MI_corrected_rmse, "\n")
+
+# Fit the ARMA model on test_residuals MI
+MI_arma_fitted_test <- Arima(MI_test_residuals, model = MI_arma_model)
+cat("Fitted ARMA Model on Test Residuals:\n")
+print(MI_arma_fitted_test)
+# Extract residuals from the fitted ARMA model on test data MI
+MI_arma_test_residuals <- residuals(MI_arma_fitted_test)
+
+#Calculate  RMSE on test set after ARMA modeling
+MI_arma_test_mse <- mean(MI_arma_test_residuals^2)
+MI_arma_test_rmse <- sqrt(MI_arma_test_mse)
+cat(" RMSE with ARMA test residual modeling (MI):", MI_arma_test_rmse, "\n")
+
+# Calculate train RMSE after ARMA modeling
+MI_arma_train_mse <- mean(MI_arma_train_residuals^2)
+MI_arma_train_rmse <- sqrt(MI_arma_train_mse)
+cat("Train RMSE with ARMA train residual modeling (MI):", MI_arma_train_rmse, "\n")
 
 # ACF and PACF of residuals after ARMA correction
-Acf(residuals(MI_arma_model), main = "ACF of ARMA residuals")
-Pacf(residuals(MI_arma_model), main = "PACF of ARMA residuals")
+Acf(residuals(MI_arma_fitted_test), main = "ACF of ARMA residuals")
+Pacf(residuals(MI_arma_fitted_test), main = "PACF of ARMA residuals")
 
 # QQ plot of residuals after ARMA
-qqnorm(residuals(MI_arma_model), main = "Q-Q Plot of ARMA Residuals")
-qqline(residuals(MI_arma_model), col = "red", lwd = 2)
+qqnorm(residuals(MI_arma_fitted_test), main = "Q-Q Plot of ARMA Residuals")
+qqline(residuals(MI_arma_fitted_test), col = "red", lwd = 2)
 
 # Check for heteroscedasticity in the residuals
 library(FinTS)
-ArchTest(residuals(MI_arma_model), lags = 12)
+ArchTest(residuals(MI_arma_fitted_test), lags = 12)
 
 # Fit a GARCH model to the ARMA residuals
 MI_spec_garch <- ugarchspec(
   variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
-  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
+  mean.model = list(armaOrder = c(1, 2), include.mean = FALSE),
   distribution.model = "std"
 )
-MI_fit_garch <- ugarchfit(spec = MI_spec_garch, data = MI_arma_residuals)
+MI_fit_test_garch <- ugarchfit(spec = MI_spec_garch, data = MI_arma_test_residuals)
 
-# Extract standardized residuals from the GARCH model
-MI_garch_resid <- residuals(MI_fit_garch, standardize = TRUE)
+#fit to train set
+MI_fit_train_garch <- ugarchfit(spec = MI_spec_garch, data = MI_arma_train_residuals)
+
+# Extract standardized test residuals from the GARCH model
+MI_garch_test_resid <- residuals(MI_fit_test_garch, standardize = TRUE)
+
+# Extract standardized train residuals from the GARCH model
+MI_garch_train_resid <- residuals(MI_fit_train_garch, standardize = TRUE)
+
 
 # Perform diagnostic tests
 cat("ARCH Test for Homoskedasticity (MI_DBi):\n")
-if (exists("MI_garch_resid")) {
-  MI_arch_test <- ArchTest(MI_garch_resid, lags = 12)
+  MI_arch_test <- ArchTest(MI_garch_test_resid, lags = 12)
   print(MI_arch_test)
-} else {
-  cat("Error: 'MI_garch_resid' object not found. Ensure the GARCH model is fitted correctly.\n")
-}
+
 
 cat("Test if the mean of residuals is 0 (MI_DBi):\n")
-MI_mean_residuals <- mean(MI_garch_resid)
+MI_mean_residuals <- mean(MI_garch_test_resid)
 cat("Mean of residuals (MI_DBi):", MI_mean_residuals, "\n")
-MI_t_test <- t.test(MI_garch_resid, mu = 0)
+MI_t_test <- t.test(MI_garch_test_resid, mu = 0)
 print(MI_t_test)
 
-# Calculate RMSE of standardized GARCH residuals for Milan
-MI_garch_rmse <- sqrt(mean(MI_garch_resid^2))
-cat("RMSE of standardized GARCH residuals (MI):", MI_garch_rmse, "\n")
+# Calculate test RMSE of test standardized GARCH residuals for Milan
+MI_garch_test_rmse <- sqrt(mean(MI_garch_test_resid^2))
+cat("RMSE of test set standardized GARCH residuals (MI):", MI_garch_test_rmse, "\n")
+
+# Calculate train RMSE of standardized GARCH residuals for Milan
+MI_garch_train_rmse <- sqrt(mean(MI_garch_train_resid^2))
+cat("RMSE of train set standardized GARCH residuals (MI):", MI_garch_train_rmse, "\n")
 
 # Augmented Dickey-Fuller test for stationarity of residuals
-adf_result <- adf.test(MI_garch_resid)
+adf_result <- adf.test(MI_garch_test_resid)
 print(adf_result)
 
 
 
 # Additional diagnostic plots
-Acf(MI_garch_resid, main = "ACF of GARCH Standardized Residuals (MI_DBi)")
-Pacf(MI_garch_resid, main = "PACF of GARCH Standardized Residuals (MI_DBi)")
-qqnorm(MI_garch_resid, main = "Q-Q Plot of GARCH Residuals (MI_DBi)")
-qqline(MI_garch_resid, col = "red", lwd = 2)
+Acf(MI_garch_test_resid, main = "ACF of GARCH Standardized Residuals (MI_DBi)")
+Pacf(MI_garch_test_resid, main = "PACF of GARCH Standardized Residuals (MI_DBi)")
+qqnorm(MI_garch_test_resid, main = "Q-Q Plot of GARCH Residuals (MI_DBi)")
+qqline(MI_garch_test_resid, col = "red", lwd = 2)
 
 # Load the MN_DBi dataset
 MN_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/MN_DB_impute.xlsx", sheet = "Sheet1")
@@ -440,36 +473,44 @@ cat("ADF Test for Stationarity on AQ_nox:\n")
 print(adf_result_default_MN)
 
 #baseline model for AQ_nox using mean
-baseline_mean <- mean(MN_DBi_clean$AQ_nox)
-cat("Baseline Mean for AQ_nox:", baseline_mean, "\n")
+baseline_mean_MN <- mean(MN_DBi_clean$AQ_nox)
+cat("Baseline Mean for AQ_nox:", baseline_mean_MN, "\n")
 
 #calculate root Mean Squared Error (RMSE) for the baseline model
-baseline_rmse <- sqrt(mean((MN_DBi_clean$AQ_nox - baseline_mean)^2))
-cat("Baseline RMSE for AQ_nox:", baseline_rmse, "\n")
+baseline_MN_rmse <- sqrt(mean((MN_DBi_clean$AQ_nox - baseline_mean_MN)^2))
+cat("Baseline RMSE for AQ_nox:", baseline_MN_rmse, "\n")
 
-# Split the data into training (70%) and testing (30%) sets
-set.seed(123)  # Set seed for reproducibility
-MN_sample_index <- sample(1:nrow(MN_DBi_clean), size = 0.7 * nrow(MN_DBi_clean))
-MN_train_data <- MN_DBi_clean[MN_sample_index, ]
-MN_test_data <- MN_DBi_clean[-MN_sample_index, ]
+#creating train + test data
+MN_train_data <- MN_DBi_clean %>% filter(Trend <= cutoff_trend)
+MN_test_data  <- MN_DBi_clean %>% filter(Trend > cutoff_trend)
 
-# Build the random forest model predicting AQ_nox using all other predictors
+# Build the random forest model predicting AQ_nox using all other predictors from train set
 MN_rf_model <- randomForest(AQ_nox ~ ., data = MN_train_data)
 print(MN_rf_model)
 
 # Use the model to predict AQ_nox on the test set
 MN_predictions <- predict(MN_rf_model, newdata = MN_test_data)
 
-# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE)
+# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE) on train set
+MN_train_predictions <- predict(MN_rf_model, newdata = MN_train_data)
+MN_train_mse <- mean((MN_train_predictions - MN_train_data$AQ_nox)^2)
+MN_train_rmse <- sqrt(MN_train_mse)
+cat("Train Mean Squared Error (MSE) for MN_DBi:", MN_train_mse, "\n")
+cat("Train Root Mean Squared Error (RMSE) for MN_DBi:", MN_train_rmse, "\n")
+
+# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE) on test set
 MN_mse <- mean((MN_predictions - MN_test_data$AQ_nox)^2)
 MN_rmse <- sqrt(MN_mse)
 cat("Mean Squared Error (MSE) for MN_DBi:", MN_mse, "\n")
 cat("Root Mean Squared Error (RMSE) for MN_DBi:", MN_rmse, "\n")
 
-# Calculate residuals
-MN_residuals <- MN_test_data$AQ_nox - MN_predictions
+# Calculate test residuals
+MN_test_residuals <- MN_test_data$AQ_nox - MN_predictions
 
-ggplot(plot_data, aes(x = Actual, y = MN_predictions)) +
+# calculate traiin residuals
+MN_train_residuals <- MN_train_data$AQ_nox - MN_train_predictions
+
+ggplot(plot_data, aes(x = Actual, y = MN_test_residuals)) +
   geom_point(color = "blue", alpha = 0.6) +
   geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
   labs(
@@ -479,50 +520,134 @@ ggplot(plot_data, aes(x = Actual, y = MN_predictions)) +
   ) +
   theme_minimal()
 
+# Plot residuals
+ggplot(residual_plot_data, aes(x = Actual, y = MN_test_residuals)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Residuals of Random Forest Model MN",
+    x = "Actual AQ_nox",
+    y = "MN_Residuals"
+  ) +
+  theme_minimal()
 
-# Fit an ARMA model to the residuals
-MN_arma_model <- auto.arima(MN_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
-MN_arma_residuals <- residuals(MN_arma_model)
+# Plot histogram of residuals to check normality
+ggplot(residual_plot_data, aes(x = MN_test_residuals)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
+  labs(
+    title = "Histogram of Residuals MN",
+    x = "Residuals",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+
+# Perform Shapiro-Wilk test for normality
+shapiro_test_MN <- shapiro.test(MN_test_residuals)
+cat("Shapiro-Wilk Test for Normality:\n")
+print(shapiro_test_MN)
+
+# Perform Durbin-Watson test for autocorrelation
+library(lmtest)
+dw_test_MN <- dwtest(test_data$AQ_nox ~ MN_test_residuals)
+cat("Durbin-Watson Test for Autocorrelation:\n")
+print(dw_test_MN)
+
+# Q-Q plot for residuals
+qqnorm(MN_test_residuals)
+qqline(MN_test_residuals, col = "red", lwd = 2)
+
+# ACF plot for residuals
+library(forecast)
+Acf(MN_test_residuals, main = "Autocorrelation of Residuals")
+
+# PACF plot for residuals
+library(forecast)
+Pacf(MN_test_residuals, main = "Partial Autocorrelation of Residuals")
+
+#train arma model on train residuals
+MN_arma_model <- auto.arima(MN_train_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
+#calculate ARMA train residuals
+MN_arma_train_residuals <- residuals(MN_arma_model)
+#print ARMA
+cat("ARMA Model Summary:\n")
+print(MN_arma_model)
+
+
+# Fit the ARMA model on test_residuals MN
+MN_arma_fitted_test <- Arima(MN_test_residuals, model = MN_arma_model)
+cat("Fitted ARMA Model on Test Residuals:\n")
+print(MN_arma_fitted_test)
+# Extract residuals from the fitted ARMA model on test data MN
+MN_arma_test_residuals <- residuals(MN_arma_fitted_test)
+
+#Calculate  RMSE on test set after ARMA modeling
+MN_arma_test_mse <- mean(MN_arma_test_residuals^2)
+MN_arma_test_rmse <- sqrt(MN_arma_test_mse)
+cat(" RMSE with ARMA test residual modeling (MN):", MN_arma_test_rmse, "\n")
+
+# Calculate train RMSE after ARMA modeling
+MN_arma_train_mse <- mean(MN_arma_train_residuals^2)
+MN_arma_train_rmse <- sqrt(MN_arma_train_mse)
+cat("Train RMSE with ARMA train residual modeling (MN):", MN_arma_train_rmse, "\n")
+
+# ACF and PACF of residuals after ARMA correction
+Acf(residuals(MN_arma_fitted_test), main = "ACF of ARMA residuals")
+Pacf(residuals(MN_arma_fitted_test), main = "PACF of ARMA residuals")
+
+# QQ plot of residuals after ARMA
+qqnorm(residuals(MN_arma_fitted_test), main = "Q-Q Plot of ARMA Residuals")
+qqline(residuals(MN_arma_fitted_test), col = "red", lwd = 2)
+
+# Check for heteroscedasticity in the residuals
+library(FinTS)
+ArchTest(residuals(MN_arma_fitted_test), lags = 12)
 
 # Fit a GARCH model to the ARMA residuals
 MN_spec_garch <- ugarchspec(
   variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
-  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
+  mean.model = list(armaOrder = c(1, 2), include.mean = FALSE),
   distribution.model = "std"
 )
-MN_fit_garch <- ugarchfit(spec = MN_spec_garch, data = MN_arma_residuals)
+MN_fit_test_garch <- ugarchfit(spec = MN_spec_garch, data = MN_arma_test_residuals)
 
-# Extract standardized residuals from the GARCH model
-MN_garch_resid <- residuals(MN_fit_garch, standardize = TRUE)
+#fit to train set
+MN_fit_train_garch <- ugarchfit(spec = MN_spec_garch, data = MN_arma_train_residuals)
 
-# Calculate RMSE of standardized GARCH residuals for Mantova
-MN_garch_rmse <- sqrt(mean(MN_garch_resid^2))
-cat("RMSE of standardized GARCH residuals (MN):", MN_garch_rmse, "\n")
+# Extract standardized test residuals from the GARCH model
+MN_garch_test_resid <- residuals(MN_fit_test_garch, standardize = TRUE)
+
+# Extract standardized train residuals from the GARCH model
+MN_garch_train_resid <- residuals(MN_fit_train_garch, standardize = TRUE)
+
 
 # Perform diagnostic tests
 cat("ARCH Test for Homoskedasticity (MN_DBi):\n")
-if (exists("MN_garch_resid")) {
-  MN_arch_test <- ArchTest(MN_garch_resid, lags = 12)
-  print(MN_arch_test)
-} else {
-  cat("Error: 'MN_garch_resid' object not found. Ensure the GARCH model is fitted correctly.\n")
-}
+MN_arch_test <- ArchTest(MN_garch_test_resid, lags = 12)
+print(MN_arch_test)
+
 
 cat("Test if the mean of residuals is 0 (MN_DBi):\n")
-MN_mean_residuals <- mean(MN_garch_resid)
+MN_mean_residuals <- mean(MN_garch_test_resid)
 cat("Mean of residuals (MN_DBi):", MN_mean_residuals, "\n")
-MN_t_test <- t.test(MN_garch_resid, mu = 0)
+MN_t_test <- t.test(MN_garch_test_resid, mu = 0)
 print(MN_t_test)
 
+# Calculate test RMSE of test standardized GARCH residuals for Mantova
+MN_garch_test_rmse <- sqrt(mean(MN_garch_test_resid^2))
+cat("RMSE of test set standardized GARCH residuals (MN):", MN_garch_test_rmse, "\n")
+
+# Calculate train RMSE of standardized GARCH residuals for Mantova
+MN_garch_train_rmse <- sqrt(mean(MN_garch_train_resid^2))
+cat("RMSE of train set standardized GARCH residuals (MN):", MN_garch_train_rmse, "\n")
+
 # Augmented Dickey-Fuller test for stationarity of residuals
-adf_result <- adf.test(MN_garch_resid)
+adf_result <- adf.test(MN_garch_test_resid)
 print(adf_result)
 
+
+
 # Additional diagnostic plots
-Acf(MN_garch_resid, main = "ACF of GARCH Standardized Residuals (MN_DBi)")
-Pacf(MN_garch_resid, main = "PACF of GARCH Standardized Residuals (MN_DBi)")
-qqnorm(MN_garch_resid, main = "Q-Q Plot of GARCH Residuals (MN_DBi)")
-qqline(MN_garch_resid, col = "red", lwd = 2)
-
-
-
+Acf(MN_garch_test_resid, main = "ACF of GARCH Standardized Residuals (MN_DBi)")
+Pacf(MN_garch_test_resid, main = "PACF of GARCH Standardized Residuals (MN_DBi)")
+qqnorm(MN_garch_test_resid, main = "Q-Q Plot of GARCH Residuals (MN_DBi)")
+qqline(MN_garch_test_resid, col = "red", lwd = 2)
