@@ -356,7 +356,7 @@ MN_arma_residuals <- residuals(MN_arma_model)
 MN_arma_model <- auto.arima(MN_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
 MN_arma_residuals <- residuals(MN_arma_model)
 
-# Calcola RMSE dopo ARIMA per Mantova
+# Calculate corrected RMSE after ARMA modeling
 MN_arma_rmse <- sqrt(mean(MN_arma_residuals^2))
 cat("RMSE dopo ARIMA (MN):", MN_arma_rmse, "\n")
 
@@ -367,6 +367,8 @@ MN_spec_garch <- ugarchspec(
   distribution.model = "std"
 )
 MN_fit_garch <- ugarchfit(spec = MN_spec_garch, data = MN_arma_residuals)
+
+MN_garch_resid <- residuals(MN_fit_garch, standardize = TRUE)
 
 # Calculate RMSE of standardized GARCH residuals for Mantova
 MN_garch_rmse <- sqrt(mean(MN_garch_resid^2))
