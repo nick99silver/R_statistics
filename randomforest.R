@@ -265,6 +265,11 @@ MI_residuals <- MI_test_data$AQ_nox - MI_predictions
 MI_arma_model <- auto.arima(MI_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
 MI_arma_residuals <- residuals(MI_arma_model)
 
+#Calculate corrected RMSE after ARMA modeling
+MI_corrected_mse <- mean(MI_arma_residuals^2)
+MI_corrected_rmse <- sqrt(MI_corrected_mse)
+cat("Corrected RMSE with ARMA residual modeling (MI):", MI_corrected_rmse, "\n")
+
 # Fit a GARCH model to the ARMA residuals
 MI_spec_garch <- ugarchspec(
   variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
