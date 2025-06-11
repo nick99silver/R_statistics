@@ -198,6 +198,10 @@ qqline(garch_resid, col = "red", lwd = 2)
 #Transforming garch_resid in vector
 garch_resid <- as.vector(garch_resid)
 
+# Calculate RMSE of standardized GARCH residuals for Bergamo
+BG_garch_rmse <- sqrt(mean(garch_resid^2))
+cat("RMSE of standardized GARCH residuals (BG):", BG_garch_rmse, "\n")
+
 #transforming garch_resid in logaritmic. CAREFULL THIS BREAKS MEAN
 #garch_resid <- log(abs(garch_resid) + 1e-6)  # Adding a small constant to avoid log(0)
 
@@ -296,6 +300,11 @@ cat("Mean of residuals (MI_DBi):", MI_mean_residuals, "\n")
 MI_t_test <- t.test(MI_garch_resid, mu = 0)
 print(MI_t_test)
 
+
+# Calculate RMSE of standardized GARCH residuals for Milan
+MI_garch_rmse <- sqrt(mean(MI_garch_resid^2))
+cat("RMSE of standardized GARCH residuals (MI):", MI_garch_rmse, "\n")
+
 # Augmented Dickey-Fuller test for stationarity of residuals
 adf_result <- adf.test(MI_garch_resid)
 print(adf_result)
@@ -343,6 +352,14 @@ MN_residuals <- MN_test_data$AQ_nox - MN_predictions
 MN_arma_model <- auto.arima(MN_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
 MN_arma_residuals <- residuals(MN_arma_model)
 
+#Calculate corrected RMSE after ARMA modeling
+MN_arma_model <- auto.arima(MN_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
+MN_arma_residuals <- residuals(MN_arma_model)
+
+# Calcola RMSE dopo ARIMA per Mantova
+MN_arma_rmse <- sqrt(mean(MN_arma_residuals^2))
+cat("RMSE dopo ARIMA (MN):", MN_arma_rmse, "\n")
+
 # Fit a GARCH model to the ARMA residuals
 MN_spec_garch <- ugarchspec(
   variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
@@ -351,8 +368,9 @@ MN_spec_garch <- ugarchspec(
 )
 MN_fit_garch <- ugarchfit(spec = MN_spec_garch, data = MN_arma_residuals)
 
-# Extract standardized residuals from the GARCH model
-MN_garch_resid <- residuals(MN_fit_garch, standardize = TRUE)
+# Calculate RMSE of standardized GARCH residuals for Mantova
+MN_garch_rmse <- sqrt(mean(MN_garch_resid^2))
+cat("RMSE of standardized GARCH residuals (MN):", MN_garch_rmse, "\n")
 
 # Perform diagnostic tests
 cat("ARCH Test for Homoskedasticity (MN_DBi):\n")
