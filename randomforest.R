@@ -28,8 +28,6 @@ plan(multisession, workers = 12 )  # Usa tutti i core
 BG_DBi<- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/BG_DB_impute.xlsx", sheet = "Sheet1")
 
 
-
-
 #remove the "IDStations" column from the dataset
 BG_DBi_clean <- BG_DBi %>% select(-IDStations)
 
@@ -37,6 +35,14 @@ BG_DBi_clean <- BG_DBi %>% select(-IDStations)
 adf_result_default_BG <- adf.test(BG_DBi_clean$AQ_nox)
 cat("ADF Test for Stationarity on AQ_nox:\n")
 print(adf_result_default_BG)
+
+#baseline model for AQ_nox using mean
+baseline_mean <- mean(BG_DBi_clean$AQ_nox)
+cat("Baseline Mean for AQ_nox:", baseline_mean, "\n")
+
+#calculate root Mean Squared Error (RMSE) for the baseline model
+baseline_rmse <- sqrt(mean((BG_DBi_clean$AQ_nox - baseline_mean)^2))
+cat("Baseline RMSE for AQ_nox:", baseline_rmse, "\n")
 
 # Load the randomForest library
 library(randomForest)
@@ -78,7 +84,7 @@ ggplot(plot_data, aes(x = Actual, y = Predicted)) +
   geom_point(color = "blue", alpha = 0.6) +
   geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
   labs(
-    title = "Random Forest Predictions vs. Actual Values",
+    title = "Random Forest Predictions vs. Actual Values BG",
     x = "Actual AQ_nox",
     y = "Predicted AQ_nox"
   ) +
@@ -98,7 +104,7 @@ ggplot(residual_plot_data, aes(x = Actual, y = Residuals)) +
   geom_point(color = "blue", alpha = 0.6) +
   geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
   labs(
-    title = "Residuals of Random Forest Model",
+    title = "Residuals of Random Forest Model BG",
     x = "Actual AQ_nox",
     y = "Residuals"
   ) +
@@ -108,7 +114,7 @@ ggplot(residual_plot_data, aes(x = Actual, y = Residuals)) +
 ggplot(residual_plot_data, aes(x = Residuals)) +
   geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
   labs(
-    title = "Histogram of Residuals",
+    title = "Histogram of Residuals BG",
     x = "Residuals",
     y = "Frequency"
   ) +
@@ -243,6 +249,14 @@ adf_result_default_MI <- adf.test(MI_DBi_clean$AQ_nox)
 cat("ADF Test for Stationarity on AQ_nox:\n")
 print(adf_result_default_MI)
 
+#baseline model for AQ_nox using mean
+baseline_mean <- mean(MI_DBi_clean$AQ_nox)
+cat("Baseline Mean for AQ_nox:", baseline_mean, "\n")
+
+#calculate root Mean Squared Error (RMSE) for the baseline model
+baseline_rmse <- sqrt(mean((MI_DBi_clean$AQ_nox - baseline_mean)^2))
+cat("Baseline RMSE for AQ_nox:", baseline_rmse, "\n")
+
 # Split the data into training (70%) and testing (30%) sets
 set.seed(123)  # Set seed for reproducibility
 MI_sample_index <- sample(1:nrow(MI_DBi_clean), size = 0.7 * nrow(MI_DBi_clean))
@@ -265,6 +279,60 @@ cat("Root Mean Squared Error (RMSE) for MI_DBi:", MI_rmse, "\n")
 # Calculate residuals
 MI_residuals <- MI_test_data$AQ_nox - MI_predictions
 
+ggplot(plot_data, aes(x = Actual, y = MI_predictions)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Random Forest Predictions vs. Actual Values MI",
+    x = "Actual AQ_nox",
+    y = "Predicted AQ_nox_MI"
+  ) +
+  theme_minimal()
+
+# Plot residuals
+ggplot(residual_plot_data, aes(x = Actual, y = MI_residuals)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Residuals of Random Forest Model MI",
+    x = "Actual AQ_nox",
+    y = "MI_Residuals"
+  ) +
+  theme_minimal()
+
+# Plot histogram of residuals to check normality
+ggplot(residual_plot_data, aes(x = MI_residuals)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
+  labs(
+    title = "Histogram of Residuals MI",
+    x = "Residuals",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+
+# Perform Shapiro-Wilk test for normality
+shapiro_test <- shapiro.test(MI_residuals)
+cat("Shapiro-Wilk Test for Normality:\n")
+print(shapiro_test)
+
+# Perform Durbin-Watson test for autocorrelation
+library(lmtest)
+dw_test <- dwtest(test_data$AQ_nox ~ MI_residuals)
+cat("Durbin-Watson Test for Autocorrelation:\n")
+print(dw_test)
+
+# Q-Q plot for residuals
+qqnorm(MI_residuals)
+qqline(MI_residuals, col = "red", lwd = 2)
+
+# ACF plot for residuals
+library(forecast)
+Acf(MI_residuals, main = "Autocorrelation of Residuals")
+
+# PACF plot for residuals
+library(forecast)
+Pacf(MI_residuals, main = "Partial Autocorrelation of Residuals")
+
 # Fit an ARMA model to the residuals
 MI_arma_model <- auto.arima(MI_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
 MI_arma_residuals <- residuals(MI_arma_model)
@@ -273,6 +341,18 @@ MI_arma_residuals <- residuals(MI_arma_model)
 MI_corrected_mse <- mean(MI_arma_residuals^2)
 MI_corrected_rmse <- sqrt(MI_corrected_mse)
 cat("Corrected RMSE with ARMA residual modeling (MI):", MI_corrected_rmse, "\n")
+
+# ACF and PACF of residuals after ARMA correction
+Acf(residuals(MI_arma_model), main = "ACF of ARMA residuals")
+Pacf(residuals(MI_arma_model), main = "PACF of ARMA residuals")
+
+# QQ plot of residuals after ARMA
+qqnorm(residuals(MI_arma_model), main = "Q-Q Plot of ARMA Residuals")
+qqline(residuals(MI_arma_model), col = "red", lwd = 2)
+
+# Check for heteroscedasticity in the residuals
+library(FinTS)
+ArchTest(residuals(MI_arma_model), lags = 12)
 
 # Fit a GARCH model to the ARMA residuals
 MI_spec_garch <- ugarchspec(
@@ -300,7 +380,6 @@ cat("Mean of residuals (MI_DBi):", MI_mean_residuals, "\n")
 MI_t_test <- t.test(MI_garch_resid, mu = 0)
 print(MI_t_test)
 
-
 # Calculate RMSE of standardized GARCH residuals for Milan
 MI_garch_rmse <- sqrt(mean(MI_garch_resid^2))
 cat("RMSE of standardized GARCH residuals (MI):", MI_garch_rmse, "\n")
@@ -308,6 +387,8 @@ cat("RMSE of standardized GARCH residuals (MI):", MI_garch_rmse, "\n")
 # Augmented Dickey-Fuller test for stationarity of residuals
 adf_result <- adf.test(MI_garch_resid)
 print(adf_result)
+
+
 
 # Additional diagnostic plots
 Acf(MI_garch_resid, main = "ACF of GARCH Standardized Residuals (MI_DBi)")
@@ -325,6 +406,14 @@ MN_DBi_clean <- MN_DBi %>% select(-IDStations)  # Remove the "IDStations" column
 adf_result_default_MN <- adf.test(MN_DBi_clean$AQ_nox)
 cat("ADF Test for Stationarity on AQ_nox:\n")
 print(adf_result_default_MN)
+
+#baseline model for AQ_nox using mean
+baseline_mean <- mean(MN_DBi_clean$AQ_nox)
+cat("Baseline Mean for AQ_nox:", baseline_mean, "\n")
+
+#calculate root Mean Squared Error (RMSE) for the baseline model
+baseline_rmse <- sqrt(mean((MN_DBi_clean$AQ_nox - baseline_mean)^2))
+cat("Baseline RMSE for AQ_nox:", baseline_rmse, "\n")
 
 # Split the data into training (70%) and testing (30%) sets
 set.seed(123)  # Set seed for reproducibility
@@ -348,17 +437,20 @@ cat("Root Mean Squared Error (RMSE) for MN_DBi:", MN_rmse, "\n")
 # Calculate residuals
 MN_residuals <- MN_test_data$AQ_nox - MN_predictions
 
+ggplot(plot_data, aes(x = Actual, y = MN_predictions)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Random Forest Predictions vs. Actual Values MN",
+    x = "Actual AQ_nox",
+    y = "Predicted AQ_nox_MN"
+  ) +
+  theme_minimal()
+
+
 # Fit an ARMA model to the residuals
 MN_arma_model <- auto.arima(MN_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
 MN_arma_residuals <- residuals(MN_arma_model)
-
-#Calculate corrected RMSE after ARMA modeling
-MN_arma_model <- auto.arima(MN_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
-MN_arma_residuals <- residuals(MN_arma_model)
-
-# Calculate corrected RMSE after ARMA modeling
-MN_arma_rmse <- sqrt(mean(MN_arma_residuals^2))
-cat("RMSE dopo ARIMA (MN):", MN_arma_rmse, "\n")
 
 # Fit a GARCH model to the ARMA residuals
 MN_spec_garch <- ugarchspec(
@@ -368,6 +460,7 @@ MN_spec_garch <- ugarchspec(
 )
 MN_fit_garch <- ugarchfit(spec = MN_spec_garch, data = MN_arma_residuals)
 
+# Extract standardized residuals from the GARCH model
 MN_garch_resid <- residuals(MN_fit_garch, standardize = TRUE)
 
 # Calculate RMSE of standardized GARCH residuals for Mantova
@@ -398,6 +491,10 @@ Acf(MN_garch_resid, main = "ACF of GARCH Standardized Residuals (MN_DBi)")
 Pacf(MN_garch_resid, main = "PACF of GARCH Standardized Residuals (MN_DBi)")
 qqnorm(MN_garch_resid, main = "Q-Q Plot of GARCH Residuals (MN_DBi)")
 qqline(MN_garch_resid, col = "red", lwd = 2)
+
+
+
+
 
 
 
