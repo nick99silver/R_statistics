@@ -30,11 +30,8 @@ BG_DBi<- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scr
 
 
 
-#1. Rimuovi la colonna "IDstations" perchè rompe il cazzo
+#remove the "IDStations" column from the dataset
 BG_DBi_clean <- BG_DBi %>% select(-IDStations)
-
-# Ensure that the outcome variable AQ_nox is available and remove missing values.
-BG_DBi_clean <- BG_DBi_clean %>% filter(!is.na(AQ_nox))
 
 # Load the randomForest library
 library(randomForest)
@@ -171,7 +168,7 @@ library(rugarch)
 # Define GARCH(1,1) model with t-distribution
 spec_garch <- ugarchspec(
   variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
-  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
+  mean.model = list(armaOrder = c(1, 1), include.mean = FALSE),
   distribution.model = "std"
 )
 
@@ -222,12 +219,15 @@ cat("Mean of residuals:", mean_residuals, "\n")
 t_test <- t.test(garch_resid, mu = 0)
 print(t_test)
 
+# Augmented Dickey-Fuller test for stationarity of residuals
+adf_result <- adf.test(garch_resid)
+print(adf_result)
+
 # Load the MI_DBi dataset
 MI_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/MI_DB_impute.xlsx", sheet = "Sheet1")
 
 # Clean the MI_DBi dataset
 MI_DBi_clean <- MI_DBi %>% select(-IDStations)  # Remove the "IDStations" column
-MI_DBi_clean <- MI_DBi_clean %>% filter(!is.na(AQ_nox))  # Remove rows with missing AQ_nox values
 
 # Split the data into training (70%) and testing (30%) sets
 set.seed(123)  # Set seed for reproducibility
@@ -281,6 +281,10 @@ cat("Mean of residuals (MI_DBi):", MI_mean_residuals, "\n")
 MI_t_test <- t.test(MI_garch_resid, mu = 0)
 print(MI_t_test)
 
+# Augmented Dickey-Fuller test for stationarity of residuals
+adf_result <- adf.test(MI_garch_resid)
+print(adf_result)
+
 # Additional diagnostic plots
 Acf(MI_garch_resid, main = "ACF of GARCH Standardized Residuals (MI_DBi)")
 Pacf(MI_garch_resid, main = "PACF of GARCH Standardized Residuals (MI_DBi)")
@@ -292,7 +296,6 @@ MN_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R sc
 
 # Clean the MN_DBi dataset
 MN_DBi_clean <- MN_DBi %>% select(-IDStations)  # Remove the "IDStations" column
-MN_DBi_clean <- MN_DBi_clean %>% filter(!is.na(AQ_nox))  # Remove rows with missing AQ_nox values
 
 # Split the data into training (70%) and testing (30%) sets
 set.seed(123)  # Set seed for reproducibility
@@ -346,10 +349,15 @@ cat("Mean of residuals (MN_DBi):", MN_mean_residuals, "\n")
 MN_t_test <- t.test(MN_garch_resid, mu = 0)
 print(MN_t_test)
 
+# Augmented Dickey-Fuller test for stationarity of residuals
+adf_result <- adf.test(MN_garch_resid)
+print(adf_result)
+
 # Additional diagnostic plots
 Acf(MN_garch_resid, main = "ACF of GARCH Standardized Residuals (MN_DBi)")
 Pacf(MN_garch_resid, main = "PACF of GARCH Standardized Residuals (MN_DBi)")
 qqnorm(MN_garch_resid, main = "Q-Q Plot of GARCH Residuals (MN_DBi)")
 qqline(MN_garch_resid, col = "red", lwd = 2)
+
 
 
