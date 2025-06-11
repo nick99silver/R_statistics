@@ -33,6 +33,11 @@ BG_DBi<- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scr
 #remove the "IDStations" column from the dataset
 BG_DBi_clean <- BG_DBi %>% select(-IDStations)
 
+# dickey fuller test for stationarity on AQ_nox on Bergamo
+adf_result_default_BG <- adf.test(BG_DBi_clean$AQ_nox)
+cat("ADF Test for Stationarity on AQ_nox:\n")
+print(adf_result_default_BG)
+
 # Load the randomForest library
 library(randomForest)
 
@@ -229,6 +234,11 @@ MI_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R sc
 # Clean the MI_DBi dataset
 MI_DBi_clean <- MI_DBi %>% select(-IDStations)  # Remove the "IDStations" column
 
+# dickey fuller test for stationarity on AQ_nox on Milano
+adf_result_default_MI <- adf.test(MI_DBi_clean$AQ_nox)
+cat("ADF Test for Stationarity on AQ_nox:\n")
+print(adf_result_default_MI)
+
 # Split the data into training (70%) and testing (30%) sets
 set.seed(123)  # Set seed for reproducibility
 MI_sample_index <- sample(1:nrow(MI_DBi_clean), size = 0.7 * nrow(MI_DBi_clean))
@@ -296,6 +306,11 @@ MN_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R sc
 
 # Clean the MN_DBi dataset
 MN_DBi_clean <- MN_DBi %>% select(-IDStations)  # Remove the "IDStations" column
+
+# dickey fuller test for stationarity on AQ_nox on Mantova
+adf_result_default_MN <- adf.test(MN_DBi_clean$AQ_nox)
+cat("ADF Test for Stationarity on AQ_nox:\n")
+print(adf_result_default_MN)
 
 # Split the data into training (70%) and testing (30%) sets
 set.seed(123)  # Set seed for reproducibility
