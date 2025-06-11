@@ -414,7 +414,7 @@ ArchTest(residuals(MI_arma_fitted_test), lags = 12)
 # Fit a GARCH model to the ARMA residuals
 MI_spec_garch <- ugarchspec(
   variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
-  mean.model = list(armaOrder = c(1, 2), include.mean = FALSE),
+  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
   distribution.model = "std"
 )
 MI_fit_test_garch <- ugarchfit(spec = MI_spec_garch, data = MI_arma_test_residuals)
@@ -605,7 +605,7 @@ ArchTest(residuals(MN_arma_fitted_test), lags = 12)
 # Fit a GARCH model to the ARMA residuals
 MN_spec_garch <- ugarchspec(
   variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
-  mean.model = list(armaOrder = c(1, 2), include.mean = FALSE),
+  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
   distribution.model = "std"
 )
 MN_fit_test_garch <- ugarchfit(spec = MN_spec_garch, data = MN_arma_test_residuals)
@@ -651,3 +651,7 @@ Acf(MN_garch_test_resid, main = "ACF of GARCH Standardized Residuals (MN_DBi)")
 Pacf(MN_garch_test_resid, main = "PACF of GARCH Standardized Residuals (MN_DBi)")
 qqnorm(MN_garch_test_resid, main = "Q-Q Plot of GARCH Residuals (MN_DBi)")
 qqline(MN_garch_test_resid, col = "red", lwd = 2)
+
+
+
+
