@@ -141,7 +141,7 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
   stat_summary(fun = mean, geom = "line", aes(group = 1), color = "red", linewidth = 1.2) +
   stat_summary(fun = mean, geom = "point", color = "red", size = 2) +
   labs(title = "AQ_nox by Day of the Week in Milano (Mean Highlighted)",
-       y = "NOₓ Concentration (µg/m³)") +
+       y = "NOₓ Concentration") +
   theme_minimal() +
   scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
