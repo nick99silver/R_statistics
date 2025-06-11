@@ -1,6 +1,8 @@
 rm(list=ls())
 
-#Libraries installation
+library(dplyr)
+library(glmnet)
+library(forecast)
 library(dplyr)
 library(lubridate)
 library("ggplot2")
@@ -12,301 +14,350 @@ library(caret) # external validation
 library(DataExplorer)
 library(zoo)
 library(imputeTS)
+library(openxlsx)
+library(tseries) # For adf.test
+library(forecast)
+library(future.apply)
+library(imputeTS)
+library(future)
+library(rugarch) #garch
+library(randomForest) # For random forest
 
-print("Libraries loaded")
+plan(multisession, workers = 12 )  # Usa tutti i core
 
-
-#Dataset import
-
-library(readr)
-Agrimonia_Dataset <- read_csv("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/Agrimonia_Dataset_v_3_0_0.csv") #From .csv
-Metadata_stations <- read_csv("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/Metadata_monitoring_network_registry_v_2_0_1.csv")
-
-# load(file = "Agrimonia_Dataset_v_3_0_0.Rdata") #From R
-# Agrimonia_Dataset <- AgrImOnIA_Dataset_v_3_0_0
-# rm(list="AgrImOnIA_Dataset_v_3_0_0")
-
-Stations_name <- Metadata_stations %>%
-  select(IDStation, NameStation, Province) %>%
-  distinct(IDStation, .keep_all = TRUE)
-
-Agrimonia_Dataset <- Agrimonia_Dataset %>%
-  left_join(Stations_name, 
-            by = c("IDStations" = "IDStation")) %>%
-  select(IDStations, NameStation, Province, everything())
-
-Agrimonia_Dataset$Month <- lubridate::month(Agrimonia_Dataset$Time, label = TRUE)
-Agrimonia_Dataset <- Agrimonia_Dataset %>% select(IDStations:Time, Month, everything())
-mesi_italiani <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-
-#mesi_italiani <- c("gen", "feb", "mar", "apr", "mag", "giu",
-#"lug", "ago", "set", "ott", "nov", "dic")
-
-Agrimonia_Dataset <- Agrimonia_Dataset %>%
-  mutate(
-    Month_num = match(Month, mesi_italiani),  
-    Season = case_when(
-      Month_num %in% c(12, 1, 2)  ~ "Winter",
-      Month_num %in% c(3, 4, 5)   ~ "Spring",
-      Month_num %in% c(6, 7, 8)   ~ "Summer",
-      Month_num %in% c(9, 10, 11)   ~ "Autumn",
-    ))
-
-# Create a column indicating day of the week
-Agrimonia_Dataset$Day_of_week <- weekdays(Agrimonia_Dataset$Time)
-
-# Create a vector with station IDs selected
-stations_id   <- c(504, 583, 697)
-# stations_name <- c("Sesto San Giovanni -> MI", "Bergamo -> BG", "Borgofranco sul Po -> MN")
-
-DB <- Agrimonia_Dataset %>% 
-  filter(IDStations %in% stations_id)
-
-#Creating day_of_year and trend_time columns
-DB$day_of_year <- yday(DB$Time)
-DB$Trend <- as.numeric(DB$Time)
-
-
-# transforming Stations_name into categorical data
-DB$NameStation <- as.factor(DB$NameStation)
-
-
-MI_DB <- DB %>% 
-  filter(IDStations==504)
-BG_DB <- DB %>% 
-  filter(IDStations==583)
-MN_DB <- DB %>% 
-  filter(IDStations==697)
-
-
-#Preliminary data analysis
-
-#Global analysis
-plot(DB$Time,DB$AQ_nox)
-plot(DB$Month,DB$AQ_nox)
-ggplot(DB, aes(x = Season, y = AQ_nox)) +
-  geom_boxplot()+ theme_minimal() +
-  theme(legend.position = "bottom")
-ggplot(DB, aes(x = Time, y = AQ_nox, color=Province)) +
-  geom_point()+ theme_minimal() +
-  theme(legend.position = "bottom")
-ggplot(DB, aes(x = Season, y = AQ_nox, color=Province)) +
-  geom_boxplot()+ theme_minimal() +
-  theme(legend.position = "bottom")
-ggplot(DB, aes(x = Time, y = AQ_nox, color=Province)) +
-  geom_smooth()+ theme_minimal() +
-  theme(legend.position = "bottom")
-ggplot(DB, aes(x  = AQ_nox, color=Province)) +
-  geom_density(size=1.5)+ theme_minimal() +
-  theme(legend.position = "bottom")
-# Create full HTML report
-#create_report(DB,
-#              y = "Province",
-#              config = configure_report(add_plot_prcomp = FALSE),
-#              output_file = "EDA_Prov_Report.html")
-
-#From here new changes applied by nick99silver to be approved from group
-ggplot(DB, aes(x = Time, y = AQ_nox)) +
-  geom_point(aes(color = Season)) +  # colore solo per i punti
-  geom_smooth(method = "lm", se = FALSE, color = "black") +  # una sola linea per Province
-  facet_wrap(~ Province) +
-  labs(title = "AQ_nox over time by Province") +
-  theme_minimal() +
-  theme(legend.position = "bottom")
-
-# Create a scatter plot with a linear regression line
-ggplot(DB, aes(x = Time, y = AQ_nox)) +
-  geom_point(aes(color=Season)) + 
-  geom_smooth(method = "lm", se = FALSE, color="black") +
-  labs(title = "AQ_nox over time") +
-  theme_minimal() +
-  theme(legend.position = "bottom")
+BG_DBi<- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/BG_DB_impute.xlsx", sheet = "Sheet1")
 
 
 
-# Create a plot showing the average AQ_nox by day of the week
-ggplot(DB, aes(x = Day_of_week, y = AQ_nox)) +
-  geom_boxplot(outlier.alpha = 0.2) +
-  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "red", linewidth = 1.2) +
-  stat_summary(fun = mean, geom = "point", color = "red", size = 2) +
-  labs(title = "AQ_nox by Day of the Week (Mean Highlighted)",
-       y = "NOₓ Concentration (µg/m³)") +
-  theme_minimal() +
-  scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
-# Create a plot showing the average AQ_nox by day of the week In Milano
-ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
-  geom_boxplot(outlier.alpha = 0.2) +
-  stat_summary(fun = mean, geom = "line", aes(group = 1), color = "red", linewidth = 1.2) +
-  stat_summary(fun = mean, geom = "point", color = "red", size = 2) +
-  labs(title = "AQ_nox by Day of the Week in Milano (Mean Highlighted)",
-       y = "NOₓ Concentration") +
-  theme_minimal() +
-  scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+#remove the "IDStations" column from the dataset
+BG_DBi_clean <- BG_DBi %>% select(-IDStations)
 
-# Interpola direttamente nella colonna AQ_nox
-# Rivedere interpolazione chiedendo a Otto, possible uso ARIMA per stimare i valori mancanti
-DB$AQ_nox <- na.approx(DB$AQ_nox)
+# Load the randomForest library
+library(randomForest)
 
-#testing stationarity
-library(tseries)
-# Augmented Dickey-Fuller test for stationarity of AQ_nox
-adf_result <- adf.test(DB$AQ_nox)
-print(adf_result)
+# Set seed for reproducibility
+set.seed(123)
+
+# Split the data into training (70%) and testing (30%) sets
+sample_index <- sample(1:nrow(BG_DBi_clean), size = 0.7 * nrow(BG_DBi_clean))
+train_data <- BG_DBi_clean[sample_index, ]
+test_data <- BG_DBi_clean[-sample_index, ]
+
+# Build the random forest model predicting AQ_nox using all other predictors
+rf_model <- randomForest(AQ_nox ~ ., data = train_data)
+print(rf_model)
+
+# Use the model to predict AQ_nox on the test set
+predictions <- predict(rf_model, newdata = test_data)
 
 
-#select only considered columns
-MI_DB <- MI_DB %>%
-  select(IDStations,AQ_pm25, AQ_nox, WE_temp_2m, WE_wind_speed_10m_mean, WE_wind_speed_10m_max,
-         WE_wind_speed_100m_mean, WE_wind_speed_100m_max, WE_tot_precipitation, WE_surface_pressure,
-         WE_solar_radiation, WE_rh_mean, WE_blh_layer_min, WE_blh_layer_max, Month_num, Season, Day_of_week, 
-         day_of_year, Trend)
-BG_DB <- BG_DB %>%
-  select(IDStations,AQ_pm25, AQ_nox, WE_temp_2m, WE_wind_speed_10m_mean, WE_wind_speed_10m_max,
-         WE_wind_speed_100m_mean, WE_wind_speed_100m_max, WE_tot_precipitation, WE_surface_pressure,
-         WE_solar_radiation, WE_rh_mean, WE_blh_layer_min, WE_blh_layer_max, Month_num, Season, Day_of_week, 
-         day_of_year, Trend)
-MN_DB <- MN_DB %>%
-  select(IDStations,AQ_pm25, AQ_nox, WE_temp_2m, WE_wind_speed_10m_mean, WE_wind_speed_10m_max,
-         WE_wind_speed_100m_mean, WE_wind_speed_100m_max, WE_tot_precipitation, WE_surface_pressure,
-         WE_solar_radiation, WE_rh_mean, WE_blh_layer_min, WE_blh_layer_max, Month_num, Season, Day_of_week, 
-         day_of_year, Trend)
 
-#Applying kalman to all numeric columns in my dataset
-vars_to_impute <- c(
-  "AQ_pm25", "AQ_nox", "WE_temp_2m", "WE_wind_speed_10m_mean", "WE_wind_speed_10m_max",
-  "WE_wind_speed_100m_mean", "WE_wind_speed_100m_max", "WE_tot_precipitation", "WE_surface_pressure",
-  "WE_solar_radiation", "WE_rh_mean", "WE_blh_layer_min", "WE_blh_layer_max"
+# Calculate Mean Squared Error (MSE) for the predictions
+mse <- mean((predictions - test_data$AQ_nox)^2)
+cat("Mean Squared Error:", mse, "\n")
+
+# Calculate Root Mean Squared Error (RMSE) for the predictions
+rmse <- sqrt(mse)
+cat("Root Mean Squared Error:", rmse, "\n")
+
+# Plot predicted vs. actual values
+library(ggplot2)
+
+plot_data <- data.frame(
+  Actual = test_data$AQ_nox,
+  Predicted = predictions
 )
 
-for (col in vars_to_impute) {
-  if (col %in% names(BG_DB)) {
-    BG_DB[[col]] <- na_kalman(ts(BG_DB[[col]], frequency = 365), model = "auto.arima")
-  }
-}
-
-# Visualizza i buchi
-#ggplot_na_distribution(ts_data)
-
-#plotting NA to be fitted
-ggplot_na_imputations(ts_data, ts_filled) +
-  labs(title = "NA Imputation using Kalman Filter")
-
-#creating a new database with the fitted values
-DB_fitted <- DB %>%
-  mutate(AQ_nox = ts_filled)
-
-
-
-# Plot the original and filled time series  
-ggplot_na_imputations(ts_data, ts_filled)
-
-# Plot the distribution of AQ_noxafter Kalman filtering
-hist(DB_fitted$AQ_nox, main = "Distribution after Kalman", col = "skyblue")
-
-#transforming categorical variables into factors
-DB_fitted$Day_of_week <- as.factor(DB_fitted$Day_of_week)
-DB_fitted$Season <- as.factor(DB_fitted$Season)
-DB_fitted$WE_mode_wind_direction_100m <- as.factor(DB_fitted$WE_mode_wind_direction_100m)
-DB_fitted$WE_mode_wind_direction_10m <- as.factor(DB_fitted$WE_mode_wind_direction_10m)
-
-#Dropping constant columns or all NAs and useless chr
-DB_fitted <- DB_fitted[, sapply(DB_fitted, function(x) {
-  !all(is.na(x)) && length(unique(na.omit(x))) > 1
-})]
-DB_fitted <- DB_fitted[, !(names(DB_fitted) %in% c("Province", "IDStations"))]
-
-#merging all stations databses into DB 
-
-
-#Use LASSO to create best model with best possible variable selection
-# Prepare matrix (X) and target (y)
-X <- model.matrix(AQ_nox ~ . -1, data = DB_clean)
-y <- DB_clean$AQ_nox
-
-
-dim(X)  # Check dimensions of X
-
-# Run LASSO with cross-validation
-lasso_cv <- cv.glmnet(X, y, alpha = 1)
-
-# Best lambda
-best_lambda <- lasso_cv$lambda.min
-
-# Final model
-model <- glmnet(X, y, alpha = 1, lambda = best_lambda)
-
-# Coefficients
-coef(model)
-
-plot(lasso_cv)
-title("Cross-Validation Error vs Lambda") +
-  xlab("Lambda") +
-  ylab("Cross-Validation Error") +
+ggplot(plot_data, aes(x = Actual, y = Predicted)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Random Forest Predictions vs. Actual Values",
+    x = "Actual AQ_nox",
+    y = "Predicted AQ_nox"
+  ) +
   theme_minimal()
 
-#Residual analysis
-fitted_vals <- as.numeric(predict(model, newx = X))
-residuals   <- y - fitted_vals
+# Calculate residuals
+residuals <- test_data$AQ_nox - predictions
 
-# Summary statistics
-summary(residuals)
-sd(residuals)
+# Prepare data for residual plot
+residual_plot_data <- data.frame(
+  Actual = test_data$AQ_nox,
+  Residuals = residuals
+)
 
-# Histogram + density
-hist(residuals,
-     main = "Histogram of Residuals",
-     xlab = "Residual",
-     col  = "lightgray",
-     border = "white")
-lines(density(residuals), lwd = 2)
+# Plot residuals
+ggplot(residual_plot_data, aes(x = Actual, y = Residuals)) +
+  geom_point(color = "blue", alpha = 0.6) +
+  geom_hline(yintercept = 0, color = "red", linetype = "dashed") +
+  labs(
+    title = "Residuals of Random Forest Model",
+    x = "Actual AQ_nox",
+    y = "Residuals"
+  ) +
+  theme_minimal()
 
-#normality check
-# QQ‐plot
+# Plot histogram of residuals to check normality
+ggplot(residual_plot_data, aes(x = Residuals)) +
+  geom_histogram(binwidth = 1, fill = "blue", color = "black", alpha = 0.7) +
+  labs(
+    title = "Histogram of Residuals",
+    x = "Residuals",
+    y = "Frequency"
+  ) +
+  theme_minimal()
+
+# Perform Shapiro-Wilk test for normality
+shapiro_test <- shapiro.test(residuals)
+cat("Shapiro-Wilk Test for Normality:\n")
+print(shapiro_test)
+
+# Perform Durbin-Watson test for autocorrelation
+library(lmtest)
+dw_test <- dwtest(test_data$AQ_nox ~ predictions)
+cat("Durbin-Watson Test for Autocorrelation:\n")
+print(dw_test)
+
+# Q-Q plot for residuals
 qqnorm(residuals)
 qqline(residuals, col = "red", lwd = 2)
 
-# Formal tests
-shapiro.test(residuals)      # Shapiro–Wilk
-library(moments)
-jarque.test(residuals)       # Jarque–Bera
+# ACF plot for residuals
+library(forecast)
+Acf(residuals, main = "Autocorrelation of Residuals")
 
-#Homoscedasticity (constant variance)
-# Residuals vs fitted
-library(ggplot2)
-ggplot(data.frame(fitted = fitted_vals, resid = residuals), 
-       aes(x = fitted, y = resid)) +
-  geom_point(alpha = 0.4) +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Residuals vs Fitted",
-       x = "Fitted values",
-       y = "Residuals") +
-  theme_minimal()
+# PACF plot for residuals
+library(forecast)
+Pacf(residuals, main = "Partial Autocorrelation of Residuals")
 
-# Breusch–Pagan test
-library(lmtest)
-# need a linear model wrapper for bp test:
-lm_wrapper <- lm(resid ~ fitted, data = data.frame(resid = residuals, fitted = fitted_vals))
-bptest(lm_wrapper)
+# Fit an ARMA model to the residuals to try to capture autocorrelation
+arma_model <- auto.arima(residuals, stationary=TRUE, seasonal=FALSE, stepwise=FALSE, approximation=FALSE)
 
-# ACF plot
-acf(residuals, main = "ACF of Residuals")
+# Get residuals from ARMA model
+arma_residuals <- residuals(arma_model)
 
-# Ljung–Box test (e.g. up to lag 24 for hourly data)
-Box.test(residuals, lag = 24, type = 
-"Ljung-Box")
+# Calculate corrected RMSE after ARMA modeling
+corrected_mse <- mean(arma_residuals^2)
+corrected_rmse <- sqrt(corrected_mse)
+cat("Corrected RMSE with ARMA residual modeling:", corrected_rmse, "\n")
 
-#Residuals over time / by station
-# If you want to see time patterns, bind back into DB_clean:
-DB_clean$resid <- residuals
-DB_clean$fitted <- fitted_vals
-DB_clean$Time   <- Agrimonia_Dataset$Time[!is.na(Agrimonia_Dataset$AQ_nox)]  # align timestamps
+# ACF and PACF of residuals after ARMA correction
+Acf(residuals(arma_model), main = "ACF of ARMA residuals")
+Pacf(residuals(arma_model), main = "PACF of ARMA residuals")
 
-ggplot(DB_clean, aes(x = Time, y = resid, color = Season)) +
-  geom_point(alpha = 0.5) +
-  geom_smooth(se = FALSE, color = "black") +
-  facet_wrap(~ NameStation) +
-  labs(title = "Residuals over Time by Station") +
-  theme_minimal()
-#Main
+# QQ plot of residuals after ARMA
+qqnorm(residuals(arma_model), main = "Q-Q Plot of ARMA Residuals")
+qqline(residuals(arma_model), col = "red", lwd = 2)
+
+# Print the final ARMA model
+cat("Final ARMA Model:\n")
+print(arma_model)
+
+
+# Check for heteroscedasticity in the residuals
+library(FinTS)
+ArchTest(residuals(arma_model), lags = 12)
+
+# ------------------------
+# Fit GARCH model to ARMA residuals
+# ------------------------
+library(rugarch)
+
+# Define GARCH(1,1) model with t-distribution
+spec_garch <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(1, 1), include.mean = FALSE),
+  distribution.model = "std"
+)
+
+# Fit the GARCH model
+fit_garch <- ugarchfit(spec = spec_garch, data = arma_residuals)
+
+# Print GARCH model summary
+cat("GARCH model summary:\n")
+show(fit_garch)
+
+# Plot standardized residuals
+garch_resid <- residuals(fit_garch, standardize = TRUE)
+
+# ACF and PACF of GARCH residuals
+Acf(garch_resid, main = "ACF of GARCH Standardized Residuals")
+Pacf(garch_resid, main = "PACF of GARCH Standardized Residuals")
+
+# Q-Q plot of GARCH standardized residuals
+qqnorm(garch_resid, main = "Q-Q Plot of GARCH Residuals")
+qqline(garch_resid, col = "red", lwd = 2)
+
+#Transforming garch_resid in vector
+garch_resid <- as.vector(garch_resid)
+
+#transforming garch_resid in logaritmic. CAREFULL THIS BREAKS MEAN
+#garch_resid <- log(abs(garch_resid) + 1e-6)  # Adding a small constant to avoid log(0)
+
+# Jarque-Bera test for normality
+cat("Jarque-Bera Test for GARCH Residuals:\n")
+print(jarque.test(garch_resid))
+
+# Ljung-Box test for autocorrelation
+cat("Ljung-Box Test for GARCH Residuals:\n")
+print(Box.test(garch_resid, lag = 20, type = "Ljung-Box"))
+
+cat("ARCH Test for Homoskedasticity:\n")
+if (exists("garch_resid")) {
+  arch_test <- ArchTest(garch_resid, lags = 12)
+  print(arch_test)
+} else {
+  cat("Error: 'garch_resid' object not found. Ensure the GARCH model is fitted correctly.\n")
+}
+
+# Test if the mean of residuals is 0
+cat("Test if the mean of residuals is 0:\n")
+mean_residuals <- mean(garch_resid)
+cat("Mean of residuals:", mean_residuals, "\n")
+t_test <- t.test(garch_resid, mu = 0)
+print(t_test)
+
+# Augmented Dickey-Fuller test for stationarity of residuals
+adf_result <- adf.test(garch_resid)
+print(adf_result)
+
+# Load the MI_DBi dataset
+MI_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/MI_DB_impute.xlsx", sheet = "Sheet1")
+
+# Clean the MI_DBi dataset
+MI_DBi_clean <- MI_DBi %>% select(-IDStations)  # Remove the "IDStations" column
+
+# Split the data into training (70%) and testing (30%) sets
+set.seed(123)  # Set seed for reproducibility
+MI_sample_index <- sample(1:nrow(MI_DBi_clean), size = 0.7 * nrow(MI_DBi_clean))
+MI_train_data <- MI_DBi_clean[MI_sample_index, ]
+MI_test_data <- MI_DBi_clean[-MI_sample_index, ]
+
+# Build the random forest model predicting AQ_nox using all other predictors
+MI_rf_model <- randomForest(AQ_nox ~ ., data = MI_train_data)
+print(MI_rf_model)
+
+# Use the model to predict AQ_nox on the test set
+MI_predictions <- predict(MI_rf_model, newdata = MI_test_data)
+
+# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE)
+MI_mse <- mean((MI_predictions - MI_test_data$AQ_nox)^2)
+MI_rmse <- sqrt(MI_mse)
+cat("Mean Squared Error (MSE) for MI_DBi:", MI_mse, "\n")
+cat("Root Mean Squared Error (RMSE) for MI_DBi:", MI_rmse, "\n")
+
+# Calculate residuals
+MI_residuals <- MI_test_data$AQ_nox - MI_predictions
+
+# Fit an ARMA model to the residuals
+MI_arma_model <- auto.arima(MI_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
+MI_arma_residuals <- residuals(MI_arma_model)
+
+# Fit a GARCH model to the ARMA residuals
+MI_spec_garch <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
+  distribution.model = "std"
+)
+MI_fit_garch <- ugarchfit(spec = MI_spec_garch, data = MI_arma_residuals)
+
+# Extract standardized residuals from the GARCH model
+MI_garch_resid <- residuals(MI_fit_garch, standardize = TRUE)
+
+# Perform diagnostic tests
+cat("ARCH Test for Homoskedasticity (MI_DBi):\n")
+if (exists("MI_garch_resid")) {
+  MI_arch_test <- ArchTest(MI_garch_resid, lags = 12)
+  print(MI_arch_test)
+} else {
+  cat("Error: 'MI_garch_resid' object not found. Ensure the GARCH model is fitted correctly.\n")
+}
+
+cat("Test if the mean of residuals is 0 (MI_DBi):\n")
+MI_mean_residuals <- mean(MI_garch_resid)
+cat("Mean of residuals (MI_DBi):", MI_mean_residuals, "\n")
+MI_t_test <- t.test(MI_garch_resid, mu = 0)
+print(MI_t_test)
+
+# Augmented Dickey-Fuller test for stationarity of residuals
+adf_result <- adf.test(MI_garch_resid)
+print(adf_result)
+
+# Additional diagnostic plots
+Acf(MI_garch_resid, main = "ACF of GARCH Standardized Residuals (MI_DBi)")
+Pacf(MI_garch_resid, main = "PACF of GARCH Standardized Residuals (MI_DBi)")
+qqnorm(MI_garch_resid, main = "Q-Q Plot of GARCH Residuals (MI_DBi)")
+qqline(MI_garch_resid, col = "red", lwd = 2)
+
+# Load the MN_DBi dataset
+MN_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/MN_DB_impute.xlsx", sheet = "Sheet1")
+
+# Clean the MN_DBi dataset
+MN_DBi_clean <- MN_DBi %>% select(-IDStations)  # Remove the "IDStations" column
+
+# Split the data into training (70%) and testing (30%) sets
+set.seed(123)  # Set seed for reproducibility
+MN_sample_index <- sample(1:nrow(MN_DBi_clean), size = 0.7 * nrow(MN_DBi_clean))
+MN_train_data <- MN_DBi_clean[MN_sample_index, ]
+MN_test_data <- MN_DBi_clean[-MN_sample_index, ]
+
+# Build the random forest model predicting AQ_nox using all other predictors
+MN_rf_model <- randomForest(AQ_nox ~ ., data = MN_train_data)
+print(MN_rf_model)
+
+# Use the model to predict AQ_nox on the test set
+MN_predictions <- predict(MN_rf_model, newdata = MN_test_data)
+
+# Calculate Mean Squared Error (MSE) and Root Mean Squared Error (RMSE)
+MN_mse <- mean((MN_predictions - MN_test_data$AQ_nox)^2)
+MN_rmse <- sqrt(MN_mse)
+cat("Mean Squared Error (MSE) for MN_DBi:", MN_mse, "\n")
+cat("Root Mean Squared Error (RMSE) for MN_DBi:", MN_rmse, "\n")
+
+# Calculate residuals
+MN_residuals <- MN_test_data$AQ_nox - MN_predictions
+
+# Fit an ARMA model to the residuals
+MN_arma_model <- auto.arima(MN_residuals, stationary = TRUE, seasonal = FALSE, stepwise = FALSE, approximation = FALSE)
+MN_arma_residuals <- residuals(MN_arma_model)
+
+# Fit a GARCH model to the ARMA residuals
+MN_spec_garch <- ugarchspec(
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  mean.model = list(armaOrder = c(7, 5), include.mean = FALSE),
+  distribution.model = "std"
+)
+MN_fit_garch <- ugarchfit(spec = MN_spec_garch, data = MN_arma_residuals)
+
+# Extract standardized residuals from the GARCH model
+MN_garch_resid <- residuals(MN_fit_garch, standardize = TRUE)
+
+# Perform diagnostic tests
+cat("ARCH Test for Homoskedasticity (MN_DBi):\n")
+if (exists("MN_garch_resid")) {
+  MN_arch_test <- ArchTest(MN_garch_resid, lags = 12)
+  print(MN_arch_test)
+} else {
+  cat("Error: 'MN_garch_resid' object not found. Ensure the GARCH model is fitted correctly.\n")
+}
+
+cat("Test if the mean of residuals is 0 (MN_DBi):\n")
+MN_mean_residuals <- mean(MN_garch_resid)
+cat("Mean of residuals (MN_DBi):", MN_mean_residuals, "\n")
+MN_t_test <- t.test(MN_garch_resid, mu = 0)
+print(MN_t_test)
+
+# Augmented Dickey-Fuller test for stationarity of residuals
+adf_result <- adf.test(MN_garch_resid)
+print(adf_result)
+
+# Additional diagnostic plots
+Acf(MN_garch_resid, main = "ACF of GARCH Standardized Residuals (MN_DBi)")
+Pacf(MN_garch_resid, main = "PACF of GARCH Standardized Residuals (MN_DBi)")
+qqnorm(MN_garch_resid, main = "Q-Q Plot of GARCH Residuals (MN_DBi)")
+qqline(MN_garch_resid, col = "red", lwd = 2)
+
+
+
