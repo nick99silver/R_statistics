@@ -196,8 +196,8 @@ qqline(garch_resid, col = "red", lwd = 2)
 #Transforming garch_resid in vector
 garch_resid <- as.vector(garch_resid)
 
-#transforming garch_resid in logaritmic
-garch_resid <- log(abs(garch_resid) + 1e-6)  # Adding a small constant to avoid log(0)
+#transforming garch_resid in logaritmic. CAREFULL THIS BREAKS MEAN
+#garch_resid <- log(abs(garch_resid) + 1e-6)  # Adding a small constant to avoid log(0)
 
 # Jarque-Bera test for normality
 cat("Jarque-Bera Test for GARCH Residuals:\n")
