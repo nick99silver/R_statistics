@@ -266,6 +266,62 @@ cat("Mean of residuals:", mean_residuals, "\n")
 t_test <- t.test(garch_resid, mu = 0)
 print(t_test)
 
+# Calculate combined predictions and RMSE
+# First, get the Random Forest predictions
+rf_predictions <- predict(rf_model, newdata = test_data)
+
+# Add ARMA predictions to RF predictions
+arma_fitted <- as.numeric(fitted(arma_fitted_test))  # Convert to numeric
+combined_predictions_rf_arma <- rf_predictions + arma_fitted
+
+# Add GARCH predictions
+garch_fitted <- as.numeric(fitted(fit_garch_test))  # Convert to numeric
+final_predictions <- combined_predictions_rf_arma + garch_fitted
+
+# Calculate the true RMSE
+true_rmse <- sqrt(mean((test_data$AQ_nox - final_predictions)^2))
+cat("True RMSE (RF + ARMA + GARCH):", true_rmse, "\n")
+
+# Calculate individual RMSEs for comparison
+rf_rmse <- sqrt(mean((test_data$AQ_nox - rf_predictions)^2))
+arma_rmse <- sqrt(mean((test_data$AQ_nox - (rf_predictions + arma_fitted))^2))
+garch_rmse <- sqrt(mean((test_data$AQ_nox - final_predictions)^2))
+
+cat("Random Forest RMSE:", rf_rmse, "\n")
+cat("RF + ARMA RMSE:", arma_rmse, "\n")
+cat("RF + ARMA + GARCH RMSE:", garch_rmse, "\n")
+
+# Create data frame for final plot
+final_plot_data <- data.frame(
+  Time = 1:length(test_data$AQ_nox),
+  Actual = test_data$AQ_nox,
+  RF = rf_predictions,
+  RF_ARMA = rf_predictions + arma_fitted,
+  RF_ARMA_GARCH = final_predictions
+)
+
+# Create the final comparison plot
+ggplot(final_plot_data, aes(x = Time)) +
+  geom_line(aes(y = Actual, color = "Actual"), alpha = 0.7) +
+
+  geom_line(aes(y = RF_ARMA_GARCH, color = "RF + ARMA + GARCH"), alpha = 0.7) +
+  scale_color_manual(values = c(
+    "Actual" = "black",
+    "RF + ARMA + GARCH" = "green"
+  )) +
+  labs(
+    title = "Comparison of Model Prediction vs Actual Values",
+    x = "Time",
+    y = "AQ_nox",
+    color = "Models"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+
 # Augmented Dickey-Fuller test for stationarity of residuals
 adf_result <- adf.test(garch_resid)
 print(adf_result)
