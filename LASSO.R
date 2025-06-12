@@ -23,6 +23,9 @@ library(future)
 library(rugarch) #garch
 plan(multisession, workers = 12 )  # Use all the core
 
+
+################### Bergamo Dataset #################
+
 # Dataset Bergamo Import
 BG_DBi<- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/BG_DB_impute.xlsx", sheet = "Sheet1")
 
