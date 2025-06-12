@@ -12,20 +12,18 @@ library(caret) # external validation
 library(DataExplorer)
 library(zoo)
 library(imputeTS)
-
-print("Libraries loaded")
-
+library(readr)
+library(tseries)
+library(moments)
+library(lmtest)
 
 #Dataset import
-
-library(readr)
 Agrimonia_Dataset <- read_csv("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/Agrimonia_Dataset_v_3_0_0.csv") #From .csv
 Metadata_stations <- read_csv("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/Metadata_monitoring_network_registry_v_2_0_1.csv")
 
-# load(file = "Agrimonia_Dataset_v_3_0_0.Rdata") #From R
-# Agrimonia_Dataset <- AgrImOnIA_Dataset_v_3_0_0
-# rm(list="AgrImOnIA_Dataset_v_3_0_0")
+#-------------------------------------------------------------------------------
 
+#Preliminary data handling
 Stations_name <- Metadata_stations %>%
   select(IDStation, NameStation, Province) %>%
   distinct(IDStation, .keep_all = TRUE)
@@ -39,9 +37,6 @@ Agrimonia_Dataset$Month <- lubridate::month(Agrimonia_Dataset$Time, label = TRUE
 Agrimonia_Dataset <- Agrimonia_Dataset %>% select(IDStations:Time, Month, everything())
 mesi_italiani <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun",
                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
-
-#mesi_italiani <- c("gen", "feb", "mar", "apr", "mag", "giu",
-#"lug", "ago", "set", "ott", "nov", "dic")
 
 Agrimonia_Dataset <- Agrimonia_Dataset %>%
   mutate(
@@ -67,7 +62,6 @@ DB <- Agrimonia_Dataset %>%
 DB$day_of_year <- yday(DB$Time)
 DB$Trend <- as.numeric(DB$Time)
 
-
 # transforming Stations_name into categorical data
 DB$NameStation <- as.factor(DB$NameStation)
 
@@ -79,6 +73,7 @@ BG_DB <- DB %>%
 MN_DB <- DB %>% 
   filter(IDStations==697)
 
+#-------------------------------------------------------------------------------
 
 #Preliminary data analysis
 
@@ -100,16 +95,10 @@ ggplot(DB, aes(x = Time, y = AQ_nox, color=Province)) +
 ggplot(DB, aes(x  = AQ_nox, color=Province)) +
   geom_density(size=1.5)+ theme_minimal() +
   theme(legend.position = "bottom")
-# Create full HTML report
-#create_report(DB,
-#              y = "Province",
-#              config = configure_report(add_plot_prcomp = FALSE),
-#              output_file = "EDA_Prov_Report.html")
 
-#From here new changes applied by nick99silver to be approved from group
 ggplot(DB, aes(x = Time, y = AQ_nox)) +
-  geom_point(aes(color = Season)) +  # colore solo per i punti
-  geom_smooth(method = "lm", se = FALSE, color = "black") +  # una sola linea per Province
+  geom_point(aes(color = Season)) +  
+  geom_smooth(method = "lm", se = FALSE, color = "black") + 
   facet_wrap(~ Province) +
   labs(title = "AQ_nox over time by Province") +
   theme_minimal() +
@@ -122,8 +111,6 @@ ggplot(DB, aes(x = Time, y = AQ_nox)) +
   labs(title = "AQ_nox over time") +
   theme_minimal() +
   theme(legend.position = "bottom")
-
-
 
 # Create a plot showing the average AQ_nox by day of the week
 ggplot(DB, aes(x = Day_of_week, y = AQ_nox)) +
@@ -145,16 +132,17 @@ ggplot(MI_DB, aes(x = Day_of_week, y = AQ_nox)) +
   theme_minimal() +
   scale_x_discrete(limits = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
 
-# Interpola direttamente nella colonna AQ_nox
-# Rivedere interpolazione chiedendo a Otto, possible uso ARIMA per stimare i valori mancanti
+# AQ_nox interpolation
 DB$AQ_nox <- na.approx(DB$AQ_nox)
 
 #testing stationarity
-library(tseries)
 # Augmented Dickey-Fuller test for stationarity of AQ_nox
 adf_result <- adf.test(DB$AQ_nox)
 print(adf_result)
 
+#-------------------------------------------------------------------------------
+
+#NA manipulation
 
 #select only considered columns
 MI_DB <- MI_DB %>%
@@ -186,9 +174,6 @@ for (col in vars_to_impute) {
   }
 }
 
-# Visualizza i buchi
-#ggplot_na_distribution(ts_data)
-
 #plotting NA to be fitted
 ggplot_na_imputations(ts_data, ts_filled) +
   labs(title = "NA Imputation using Kalman Filter")
@@ -197,12 +182,10 @@ ggplot_na_imputations(ts_data, ts_filled) +
 DB_fitted <- DB %>%
   mutate(AQ_nox = ts_filled)
 
-
-
 # Plot the original and filled time series  
 ggplot_na_imputations(ts_data, ts_filled)
 
-# Plot the distribution of AQ_noxafter Kalman filtering
+# Plot the distribution of AQ_nox after Kalman filtering
 hist(DB_fitted$AQ_nox, main = "Distribution after Kalman", col = "skyblue")
 
 #transforming categorical variables into factors
@@ -217,14 +200,14 @@ DB_fitted <- DB_fitted[, sapply(DB_fitted, function(x) {
 })]
 DB_fitted <- DB_fitted[, !(names(DB_fitted) %in% c("Province", "IDStations"))]
 
-#merging all stations databses into DB 
+#-------------------------------------------------------------------------------
 
+#Lasso on global database - NOT USED IN THE REPORT
 
 #Use LASSO to create best model with best possible variable selection
 # Prepare matrix (X) and target (y)
 X <- model.matrix(AQ_nox ~ . -1, data = DB_clean)
 y <- DB_clean$AQ_nox
-
 
 dim(X)  # Check dimensions of X
 
@@ -269,12 +252,10 @@ qqline(residuals, col = "red", lwd = 2)
 
 # Formal tests
 shapiro.test(residuals)      # Shapiro–Wilk
-library(moments)
 jarque.test(residuals)       # Jarque–Bera
 
 #Homoscedasticity (constant variance)
 # Residuals vs fitted
-library(ggplot2)
 ggplot(data.frame(fitted = fitted_vals, resid = residuals), 
        aes(x = fitted, y = resid)) +
   geom_point(alpha = 0.4) +
@@ -285,7 +266,6 @@ ggplot(data.frame(fitted = fitted_vals, resid = residuals),
   theme_minimal()
 
 # Breusch–Pagan test
-library(lmtest)
 # need a linear model wrapper for bp test:
 lm_wrapper <- lm(resid ~ fitted, data = data.frame(resid = residuals, fitted = fitted_vals))
 bptest(lm_wrapper)
@@ -309,4 +289,4 @@ ggplot(DB_clean, aes(x = Time, y = resid, color = Season)) +
   facet_wrap(~ NameStation) +
   labs(title = "Residuals over Time by Station") +
   theme_minimal()
-#Main
+
