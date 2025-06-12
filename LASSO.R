@@ -120,10 +120,10 @@ selected_vars_MN <- setdiff(selected_vars_MN, "(Intercept)")
 cat("Selected lambda value from LASSO:\n")
 print(selected_vars_MN)
 
-#print lasso coefficients
+# Print lasso coefficients
 print(lasso_coef_MN)
 
-#Print selected lambda value
+# Print selected lambda value
 cat("Selected lambda value for LASSO:\n")
 print(cv.lasso_MN$lambda.1se)
 
