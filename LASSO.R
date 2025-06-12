@@ -82,6 +82,8 @@ print(selected_vars_MI)
 
 # Print lasso coefficients
 print(lasso_coef_MI)
+
+#Print selected lambda value
 cat("Selected lambda value for LASSO:\n")
 print(cv.lasso_MI$lambda.1se)
 
@@ -117,6 +119,8 @@ print(selected_vars_MN)
 
 #print lasso coefficients
 print(lasso_coef_MN)
+
+#Print selected lambda value
 cat("Selected lambda value for LASSO:\n")
 print(cv.lasso_MN$lambda.1se)
 
