@@ -22,11 +22,9 @@ library(imputeTS)
 library(future)
 library(rugarch) #garch
 library(randomForest) # For random forest
-
-plan(multisession, workers = 12 )  # Usa tutti i core
+plan(multisession, workers = 12 )  # Use all the core in case we need them
 
 BG_DBi<- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/BG_DB_impute.xlsx", sheet = "Sheet1")
-
 
 #remove the "IDStations" column from the dataset
 BG_DBi_clean <- BG_DBi %>% select(-IDStations)
@@ -291,26 +289,53 @@ cat("Random Forest RMSE:", rf_rmse, "\n")
 cat("RF + ARMA RMSE:", arma_rmse, "\n")
 cat("RF + ARMA + GARCH RMSE:", garch_rmse, "\n")
 
-# Create data frame for final plot
+# Calculate combined predictions and RMSE for train set
+BG_rf_predictions_train <- predict(rf_model, newdata = train_data)
+BG_arma_fitted_train <- as.numeric(fitted(arma_model))
+BG_garch_fitted_train <- as.numeric(fitted(fit_garch))
+
+BG_combined_predictions_rf_arma_train <- BG_rf_predictions_train + BG_arma_fitted_train
+BG_final_predictions_train <- BG_combined_predictions_rf_arma_train + BG_garch_fitted_train
+
+# Calculate RMSEs for BG train set
+BG_rf_rmse_train <- sqrt(mean((train_data$AQ_nox - BG_rf_predictions_train)^2))
+BG_arma_rmse_train <- sqrt(mean((train_data$AQ_nox - BG_combined_predictions_rf_arma_train)^2))
+BG_garch_rmse_train <- sqrt(mean((train_data$AQ_nox - BG_final_predictions_train)^2))
+
+cat("\nBergamo Train Set RMSEs:\n")
+cat("Random Forest RMSE:", BG_rf_rmse_train, "\n")
+cat("RF + ARMA RMSE:", BG_arma_rmse_train, "\n")
+cat("RF + ARMA + GARCH RMSE:", BG_garch_rmse_train, "\n")
+
+# Create data frame for combined train and test data with dates
 final_plot_data <- data.frame(
-  Time = 1:length(test_data$AQ_nox),
-  Actual = test_data$AQ_nox,
-  RF = rf_predictions,
-  RF_ARMA = rf_predictions + arma_fitted,
-  RF_ARMA_GARCH = final_predictions
+  Time = seq(from = as.Date("2016-01-01"), 
+             to = as.Date("2021-12-31"), 
+             length.out = length(c(train_data$AQ_nox, test_data$AQ_nox))),
+  Actual = c(train_data$AQ_nox, test_data$AQ_nox),
+  RF = c(BG_rf_predictions_train, rf_predictions),
+  RF_ARMA = c(BG_combined_predictions_rf_arma_train, combined_predictions_rf_arma),
+  RF_ARMA_GARCH = c(BG_final_predictions_train, final_predictions)
 )
 
-# Create the final comparison plot
+# Create the plot
 ggplot(final_plot_data, aes(x = Time)) +
-  geom_line(aes(y = Actual, color = "Actual"), alpha = 0.7) +
-
-  geom_line(aes(y = RF_ARMA_GARCH, color = "RF + ARMA + GARCH"), alpha = 0.7) +
+  geom_point(aes(y = Actual, color = "Actual"), alpha = 0.7) +
+  geom_line(aes(y = RF_ARMA_GARCH, color = "RF + ARMA + GARCH"), alpha = 0.7, size=1) +
+  geom_vline(xintercept = as.Date("2020-01-01"), 
+             linetype = "dashed", 
+             color = "blue") +
+  annotate("text", x = as.Date("2020-01-01"), 
+           y = max(final_plot_data$Actual), 
+           label = "Train | Test", 
+           hjust = 0.55) +
   scale_color_manual(values = c(
     "Actual" = "black",
-    "RF + ARMA + GARCH" = "green"
+    "RF + ARMA + GARCH" = "coral"
   )) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
   labs(
-    title = "Comparison of Model Prediction vs Actual Values",
+    title = "Test Predictor vs Actual Values",
     x = "Time",
     y = "AQ_nox",
     color = "Models"
@@ -321,10 +346,12 @@ ggplot(final_plot_data, aes(x = Time)) +
     plot.title = element_text(hjust = 0.5)
   )
 
-
 # Augmented Dickey-Fuller test for stationarity of residuals
 adf_result <- adf.test(garch_resid)
 print(adf_result)
+
+
+############## Start with Milano #################### 
 
 # Load the MI_DBi dataset
 MI_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/MI_DB_impute.xlsx", sheet = "Sheet1")
@@ -345,7 +372,9 @@ cat("Baseline Mean for AQ_nox:", baseline_mean, "\n")
 baseline_rmse <- sqrt(mean((MI_DBi_clean$AQ_nox - baseline_mean)^2))
 cat("Baseline RMSE for AQ_nox:", baseline_rmse, "\n")
 
+
 #creating train + test data
+cutoff_trend <- 18261
 MI_train_data <- MI_DBi_clean %>% filter(Trend <= cutoff_trend)
 MI_test_data  <- MI_DBi_clean %>% filter(Trend > cutoff_trend)
 
@@ -374,6 +403,12 @@ MI_test_residuals <- MI_test_data$AQ_nox - MI_predictions
 
 # calculate traiin residuals
 MI_train_residuals <- MI_train_data$AQ_nox - MI_train_predictions
+
+# Prepare data for plotting
+plot_data <- data.frame(
+  Actual = MI_test_data$AQ_nox,
+  MI_test_residuals = MI_test_residuals
+)
 
 ggplot(plot_data, aes(x = Actual, y = MI_test_residuals)) +
   geom_point(color = "blue", alpha = 0.6) +
@@ -484,11 +519,10 @@ MI_garch_test_resid <- residuals(MI_fit_test_garch, standardize = TRUE)
 # Extract standardized train residuals from the GARCH model
 MI_garch_train_resid <- residuals(MI_fit_train_garch, standardize = TRUE)
 
-
 # Perform diagnostic tests
 cat("ARCH Test for Homoskedasticity (MI_DBi):\n")
-  MI_arch_test <- ArchTest(MI_garch_test_resid, lags = 12)
-  print(MI_arch_test)
+MI_arch_test <- ArchTest(MI_garch_test_resid, lags = 12)
+print(MI_arch_test)
 
 
 cat("Test if the mean of residuals is 0 (MI_DBi):\n")
@@ -510,15 +544,98 @@ adf_result <- adf.test(MI_garch_test_resid)
 print(adf_result)
 
 
-
 # Additional diagnostic plots
 Acf(MI_garch_test_resid, main = "ACF of GARCH Standardized Residuals (MI_DBi)")
 Pacf(MI_garch_test_resid, main = "PACF of GARCH Standardized Residuals (MI_DBi)")
 qqnorm(MI_garch_test_resid, main = "Q-Q Plot of GARCH Residuals (MI_DBi)")
 qqline(MI_garch_test_resid, col = "red", lwd = 2)
 
+
+# For MI dataset
+# Calculate combined predictions and RMSE for test set
+MI_rf_predictions_test <- predict(MI_rf_model, newdata = MI_test_data)
+MI_arma_fitted_test <- as.numeric(fitted(MI_arma_fitted_test))
+MI_garch_fitted_test <- as.numeric(fitted(MI_fit_test_garch))
+
+MI_combined_predictions_rf_arma_test <- MI_rf_predictions_test + MI_arma_fitted_test
+MI_final_predictions_test <- MI_combined_predictions_rf_arma_test + MI_garch_fitted_test
+
+# Calculate RMSEs for MI test set
+MI_rf_rmse_test <- sqrt(mean((MI_test_data$AQ_nox - MI_rf_predictions_test)^2))
+MI_arma_rmse_test <- sqrt(mean((MI_test_data$AQ_nox - MI_combined_predictions_rf_arma_test)^2))
+MI_garch_rmse_test <- sqrt(mean((MI_test_data$AQ_nox - MI_final_predictions_test)^2))
+
+cat("Milano Test Set RMSEs:\n")
+cat("Random Forest RMSE:", MI_rf_rmse_test, "\n")
+cat("RF + ARMA RMSE:", MI_arma_rmse_test, "\n")
+cat("RF + ARMA + GARCH RMSE:", MI_garch_rmse_test, "\n")
+
+# Calculate combined predictions and RMSE for train set
+MI_rf_predictions_train <- predict(MI_rf_model, newdata = MI_train_data)
+MI_arma_fitted_train <- as.numeric(fitted(MI_arma_model))
+MI_garch_fitted_train <- as.numeric(fitted(MI_fit_train_garch))
+
+MI_combined_predictions_rf_arma_train <- MI_rf_predictions_train + MI_arma_fitted_train
+MI_final_predictions_train <- MI_combined_predictions_rf_arma_train + MI_garch_fitted_train
+
+# Calculate RMSEs for MI train set
+MI_rf_rmse_train <- sqrt(mean((MI_train_data$AQ_nox - MI_rf_predictions_train)^2))
+MI_arma_rmse_train <- sqrt(mean((MI_train_data$AQ_nox - MI_combined_predictions_rf_arma_train)^2))
+MI_garch_rmse_train <- sqrt(mean((MI_train_data$AQ_nox - MI_final_predictions_train)^2))
+
+cat("\nMilano Train Set RMSEs:\n")
+cat("Random Forest RMSE:", MI_rf_rmse_train, "\n")
+cat("RF + ARMA RMSE:", MI_arma_rmse_train, "\n")
+cat("RF + ARMA + GARCH RMSE:", MI_garch_rmse_train, "\n")
+
+
+# Create data frame for Milano (MI)
+MI_plot_data <- data.frame(
+  Time = seq(from = as.Date("2016-01-01"), 
+             to = as.Date("2021-12-31"), 
+             by = "day"),
+  Actual = c(MI_train_data$AQ_nox, MI_test_data$AQ_nox),
+  RF_ARMA_GARCH = c(MI_final_predictions_train, MI_final_predictions_test)
+)
+
+# Create Milano plot
+MI_plot <- ggplot(MI_plot_data, aes(x = Time)) +
+  geom_point(aes(y = Actual, color = "Actual"), alpha = 0.7) +
+  geom_line(aes(y = RF_ARMA_GARCH, color = "RF + ARMA + GARCH"), alpha = 0.7, size = 1) +
+  geom_vline(xintercept = as.Date("2019-12-31"), 
+             linetype = "dashed", 
+             color = "blue") +
+  annotate("text", x = as.Date("2019-12-31"), 
+           y = max(MI_plot_data$Actual), 
+           label = "Train | Test", 
+           hjust = -0.1) +
+  scale_color_manual(values = c(
+    "Actual" = "black",
+    "RF + ARMA + GARCH" = "coral"
+  )) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(
+    title = "Test Predictor vs Actual Values (Milano)",
+    x = "Time",
+    y = "AQ_nox",
+    color = "Models"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Display the plots
+print(MI_plot)
+
+
+
+############## Start with Mantova #################### 
+
 # Load the MN_DBi dataset
 MN_DBi <- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/MN_DB_impute.xlsx", sheet = "Sheet1")
+
 
 # Clean the MN_DBi dataset
 MN_DBi_clean <- MN_DBi %>% select(-IDStations)  # Remove the "IDStations" column
@@ -537,6 +654,7 @@ baseline_MN_rmse <- sqrt(mean((MN_DBi_clean$AQ_nox - baseline_mean_MN)^2))
 cat("Baseline RMSE for AQ_nox:", baseline_MN_rmse, "\n")
 
 #creating train + test data
+cutoff_trend <- 18261
 MN_train_data <- MN_DBi_clean %>% filter(Trend <= cutoff_trend)
 MN_test_data  <- MN_DBi_clean %>% filter(Trend > cutoff_trend)
 
@@ -708,42 +826,6 @@ Pacf(MN_garch_test_resid, main = "PACF of GARCH Standardized Residuals (MN_DBi)"
 qqnorm(MN_garch_test_resid, main = "Q-Q Plot of GARCH Residuals (MN_DBi)")
 qqline(MN_garch_test_resid, col = "red", lwd = 2)
 
-# For MI dataset
-# Calculate combined predictions and RMSE for test set
-MI_rf_predictions_test <- predict(MI_rf_model, newdata = MI_test_data)
-MI_arma_fitted_test <- as.numeric(fitted(MI_arma_fitted_test))
-MI_garch_fitted_test <- as.numeric(fitted(MI_fit_test_garch))
-
-MI_combined_predictions_rf_arma_test <- MI_rf_predictions_test + MI_arma_fitted_test
-MI_final_predictions_test <- MI_combined_predictions_rf_arma_test + MI_garch_fitted_test
-
-# Calculate RMSEs for MI test set
-MI_rf_rmse_test <- sqrt(mean((MI_test_data$AQ_nox - MI_rf_predictions_test)^2))
-MI_arma_rmse_test <- sqrt(mean((MI_test_data$AQ_nox - MI_combined_predictions_rf_arma_test)^2))
-MI_garch_rmse_test <- sqrt(mean((MI_test_data$AQ_nox - MI_final_predictions_test)^2))
-
-cat("Milano Test Set RMSEs:\n")
-cat("Random Forest RMSE:", MI_rf_rmse_test, "\n")
-cat("RF + ARMA RMSE:", MI_arma_rmse_test, "\n")
-cat("RF + ARMA + GARCH RMSE:", MI_garch_rmse_test, "\n")
-
-# Calculate combined predictions and RMSE for train set
-MI_rf_predictions_train <- predict(MI_rf_model, newdata = MI_train_data)
-MI_arma_fitted_train <- as.numeric(fitted(MI_arma_model))
-MI_garch_fitted_train <- as.numeric(fitted(MI_fit_train_garch))
-
-MI_combined_predictions_rf_arma_train <- MI_rf_predictions_train + MI_arma_fitted_train
-MI_final_predictions_train <- MI_combined_predictions_rf_arma_train + MI_garch_fitted_train
-
-# Calculate RMSEs for MI train set
-MI_rf_rmse_train <- sqrt(mean((MI_train_data$AQ_nox - MI_rf_predictions_train)^2))
-MI_arma_rmse_train <- sqrt(mean((MI_train_data$AQ_nox - MI_combined_predictions_rf_arma_train)^2))
-MI_garch_rmse_train <- sqrt(mean((MI_train_data$AQ_nox - MI_final_predictions_train)^2))
-
-cat("\nMilano Train Set RMSEs:\n")
-cat("Random Forest RMSE:", MI_rf_rmse_train, "\n")
-cat("RF + ARMA RMSE:", MI_arma_rmse_train, "\n")
-cat("RF + ARMA + GARCH RMSE:", MI_garch_rmse_train, "\n")
 
 # For MN dataset
 # Calculate combined predictions and RMSE for test set
@@ -781,3 +863,45 @@ cat("\nMantova Train Set RMSEs:\n")
 cat("Random Forest RMSE:", MN_rf_rmse_train, "\n")
 cat("RF + ARMA RMSE:", MN_arma_rmse_train, "\n")
 cat("RF + ARMA + GARCH RMSE:", MN_garch_rmse_train, "\n")
+
+
+# Create data frame for Mantova (MN)
+MN_plot_data <- data.frame(
+  Time = seq(from = as.Date("2016-01-01"), 
+             to = as.Date("2021-12-31"), 
+             by = "day"),
+  Actual = c(MN_train_data$AQ_nox, MN_test_data$AQ_nox),
+  RF_ARMA_GARCH = c(MN_final_predictions_train, MN_final_predictions_test)
+)
+
+# Create Mantova plot
+MN_plot <- ggplot(MN_plot_data, aes(x = Time)) +
+  geom_point(aes(y = Actual, color = "Actual"), alpha = 0.7) +
+  geom_line(aes(y = RF_ARMA_GARCH, color = "RF + ARMA + GARCH"), alpha = 0.7, size = 1) +
+  geom_vline(xintercept = as.Date("2019-12-31"), 
+             linetype = "dashed", 
+             color = "blue") +
+  annotate("text", x = as.Date("2019-12-31"), 
+           y = max(MN_plot_data$Actual), 
+           label = "Train | Test", 
+           hjust = -0.1) +
+  scale_color_manual(values = c(
+    "Actual" = "black",
+    "RF + ARMA + GARCH" = "coral"
+  )) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  labs(
+    title = "Test Predictor vs Actual Values (Mantova)",
+    x = "Time",
+    y = "AQ_nox",
+    color = "Models"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+# Display the plots
+print(MN_plot)
+
