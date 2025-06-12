@@ -22,6 +22,8 @@ library(imputeTS)
 library(future)
 library(rugarch) #garch
 library(randomForest) # For random forest
+library(FinTS) #for heteroscedasticity tests
+
 plan(multisession, workers = 12 )  # Use all the core in case we need them
 
 BG_DBi<- read.xlsx("/Users/nicolasilvestri/Desktop/Unibg/Statistics/PART 1/R scripts and data/Databases/BG_DB_impute.xlsx", sheet = "Sheet1")
@@ -47,12 +49,8 @@ cat("Baseline Mean for AQ_nox:", baseline_mean, "\n")
 baseline_rmse <- sqrt(mean((BG_DBi_clean$AQ_nox - baseline_mean)^2))
 cat("Baseline RMSE for AQ_nox:", baseline_rmse, "\n")
 
-# Load the randomForest library
-library(randomForest)
-
 # Set seed for reproducibility
 set.seed(123)
-
 
 # Build the random forest model predicting AQ_nox using all other predictors from training data
 rf_model <- randomForest(AQ_nox ~ ., data = train_data)
@@ -69,17 +67,16 @@ train_mse <- mean((train_predictions - train_data$AQ_nox)^2)
 train_rmse <- sqrt(train_mse)
 cat("Train Root Mean Squared Error:", train_rmse, "\n")
 
-# Calculate Mean Squared Error (MSE) for the predictions
+# Calculate Mean Squared Error (MSE) for the predictions on test
 mse <- mean((predictions - test_data$AQ_nox)^2)
 cat("Mean Squared Error:", mse, "\n")
 
-# Calculate Root Mean Squared Error (RMSE) for the predictions
+# Calculate Root Mean Squared Error (RMSE) for the predictions on test
 rmse <- sqrt(mse)
 cat("Root Mean Squared Error:", rmse, "\n")
 
 
 # Plot predicted vs. actual values
-library(ggplot2)
 
 plot_data <- data.frame(
   Actual = test_data$AQ_nox,
@@ -142,11 +139,9 @@ qqnorm(test_residuals)
 qqline(test_residuals, col = "red", lwd = 2)
 
 # ACF plot for residuals
-library(forecast)
 Acf(test_residuals, main = "Autocorrelation of Residuals")
 
 # PACF plot for residuals
-library(forecast)
 Pacf(test_residuals, main = "Partial Autocorrelation of Residuals")
 
 # Train the ARMA model on train_residuals
@@ -165,23 +160,13 @@ arma_test_residuals <- residuals(arma_fitted_test)
 
 # Calculate RMSE for the ARMA model on train residuals
 arma_train_rmse <- sqrt(mean(arma_residuals^2))
-cat("RMSE for ARMA Model on Test Residuals:", arma_train_rmse, "\n")
-
-# Calculate corrected train RMSE after ARMA modeling
-corrected_train_mse <- mean(arma_residuals^2)
-corrected_train_rmse <- sqrt(corrected_train_mse)
-cat("Corrected RMSE with ARMA residual modeling:", corrected_train_rmse, "\n")
+cat("RMSE for ARMA Model on train Residuals:", arma_train_rmse, "\n")
 
 # Calculate RMSE for the ARMA model on test residuals
 arma_test_rmse <- sqrt(mean(arma_test_residuals^2))
 cat("RMSE for ARMA Model on Test Residuals:", arma_test_rmse, "\n")
 
-# Calculate corrected test RMSE after ARMA modeling
-corrected_mse <- mean(arma_test_residuals^2)
-corrected_rmse <- sqrt(corrected_mse)
-cat("Corrected RMSE with ARMA residual modeling:", corrected_rmse, "\n")
-
-# ACF and PACF of residuals after ARMA correction
+# ACF and PACF of residuals after ARMA 
 Acf(residuals(arma_fitted_test), main = "ACF of ARMA residuals")
 Pacf(residuals(arma_fitted_test), main = "PACF of ARMA residuals")
 
@@ -195,13 +180,11 @@ print(arma_model)
 
 
 # Check for heteroscedasticity in the residuals
-library(FinTS)
 ArchTest(residuals(arma_fitted_test), lags = 12)
 
 # ------------------------
 # Fit GARCH model to ARMA residuals
 # ------------------------
-library(rugarch)
 
 # Define GARCH(1,1) model with t-distribution
 spec_garch <- ugarchspec(
@@ -237,11 +220,11 @@ qqline(garch_resid, col = "red", lwd = 2)
 #Transforming garch_resid in vector
 garch_resid <- as.vector(garch_resid)
 
-# Calculate RMSE of standardizedGARCH residuals for Bergamo on test set
+# Calculate RMSE of standardized GARCH residuals for Bergamo on test set
 BG_garch_rmse <- sqrt(mean(garch_resid^2))
 cat("RMSE of standardized GARCH residuals on test set (BG):", BG_garch_rmse, "\n")
 
-# Calculate RMSE of standardizedGARCH residuals for Bergamo on train set
+# Calculate RMSE of standardized GARCH residuals for Bergamo on train set
 BG_garch_train_rmse <- sqrt(mean(garch_resid_train^2))
 cat("RMSE of standardized GARCH residuals on train set (BG):", BG_garch_train_rmse, "\n")
 
@@ -264,7 +247,7 @@ cat("Mean of residuals:", mean_residuals, "\n")
 t_test <- t.test(garch_resid, mu = 0)
 print(t_test)
 
-# Calculate combined predictions and RMSE
+# Calculate combined predictions and RMSE for test set
 # First, get the Random Forest predictions
 rf_predictions <- predict(rf_model, newdata = test_data)
 
@@ -276,7 +259,7 @@ combined_predictions_rf_arma <- rf_predictions + arma_fitted
 garch_fitted <- as.numeric(fitted(fit_garch_test))  # Convert to numeric
 final_predictions <- combined_predictions_rf_arma + garch_fitted
 
-# Calculate the true RMSE
+# Calculate the true RMSE for test set
 true_rmse <- sqrt(mean((test_data$AQ_nox - final_predictions)^2))
 cat("True RMSE (RF + ARMA + GARCH):", true_rmse, "\n")
 
@@ -447,7 +430,6 @@ cat("Shapiro-Wilk Test for Normality:\n")
 print(shapiro_test)
 
 # Perform Durbin-Watson test for autocorrelation
-library(lmtest)
 dw_test <- dwtest(test_data$AQ_nox ~ MI_test_residuals)
 cat("Durbin-Watson Test for Autocorrelation:\n")
 print(dw_test)
@@ -457,11 +439,9 @@ qqnorm(MI_test_residuals)
 qqline(MI_test_residuals, col = "red", lwd = 2)
 
 # ACF plot for residuals
-library(forecast)
 Acf(MI_test_residuals, main = "Autocorrelation of Residuals")
 
 # PACF plot for residuals
-library(forecast)
 Pacf(MI_test_residuals, main = "Partial Autocorrelation of Residuals")
 
 #train arma model on train residuals
@@ -499,7 +479,6 @@ qqnorm(residuals(MI_arma_fitted_test), main = "Q-Q Plot of ARMA Residuals")
 qqline(residuals(MI_arma_fitted_test), col = "red", lwd = 2)
 
 # Check for heteroscedasticity in the residuals
-library(FinTS)
 ArchTest(residuals(MI_arma_fitted_test), lags = 12)
 
 # Fit a GARCH model to the ARMA residuals
@@ -611,7 +590,7 @@ MI_plot <- ggplot(MI_plot_data, aes(x = Time)) +
            hjust = -0.1) +
   scale_color_manual(values = c(
     "Actual" = "black",
-    "RF + ARMA + GARCH" = "coral"
+    "RF + ARMA + GARCH" = "green3"
   )) +
   scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
   labs(
@@ -721,7 +700,6 @@ cat("Shapiro-Wilk Test for Normality:\n")
 print(shapiro_test_MN)
 
 # Perform Durbin-Watson test for autocorrelation
-library(lmtest)
 dw_test_MN <- dwtest(test_data$AQ_nox ~ MN_test_residuals)
 cat("Durbin-Watson Test for Autocorrelation:\n")
 print(dw_test_MN)
@@ -731,11 +709,9 @@ qqnorm(MN_test_residuals)
 qqline(MN_test_residuals, col = "red", lwd = 2)
 
 # ACF plot for residuals
-library(forecast)
 Acf(MN_test_residuals, main = "Autocorrelation of Residuals")
 
 # PACF plot for residuals
-library(forecast)
 Pacf(MN_test_residuals, main = "Partial Autocorrelation of Residuals")
 
 #train arma model on train residuals
@@ -773,7 +749,6 @@ qqnorm(residuals(MN_arma_fitted_test), main = "Q-Q Plot of ARMA Residuals")
 qqline(residuals(MN_arma_fitted_test), col = "red", lwd = 2)
 
 # Check for heteroscedasticity in the residuals
-library(FinTS)
 ArchTest(residuals(MN_arma_fitted_test), lags = 12)
 
 # Fit a GARCH model to the ARMA residuals
@@ -887,7 +862,7 @@ MN_plot <- ggplot(MN_plot_data, aes(x = Time)) +
            hjust = -0.1) +
   scale_color_manual(values = c(
     "Actual" = "black",
-    "RF + ARMA + GARCH" = "coral"
+    "RF + ARMA + GARCH" = "cyan3"
   )) +
   scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
   labs(
@@ -904,4 +879,3 @@ MN_plot <- ggplot(MN_plot_data, aes(x = Time)) +
 
 # Display the plots
 print(MN_plot)
-
